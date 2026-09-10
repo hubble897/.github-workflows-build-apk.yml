@@ -6,886 +6,114 @@ on:
     branches:
       - main
 
-permissions:
-  contents: read
-
 jobs:
   build:
-    name: Build QuestMate APK
     runs-on: ubuntu-latest
 
     steps:
 
-      # ============================================================
+      # ------------------------------------------------------------
       # CHECKOUT
-      # ============================================================
-
-      - name: Checkout
+      # ------------------------------------------------------------
+      - name: Checkout QuestMate
         uses: actions/checkout@v4
 
-
-      # ============================================================
+      # ------------------------------------------------------------
       # JAVA
-      # ============================================================
-
+      # ------------------------------------------------------------
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-
-      # ============================================================
-      # ANDROID
-      # ============================================================
-
+      # ------------------------------------------------------------
+      # ANDROID SDK
+      # ------------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-
-      # ============================================================
-      # DOWNLOAD OPEN-SOURCE QUEST HELPER
-      # ============================================================
-
-      - name: Download Quest Helper
-        run: |
-          git clone --depth 1 \
-            https://github.com/Zoinkwiz/quest-helper.git \
-            quest-helper
-
-          test -f quest-helper/LICENSE
-
-
-      # ============================================================
+      # ------------------------------------------------------------
       # DOWNLOAD CURRENT RUNELITE QUEST LIST
-      # ============================================================
-
+      # ------------------------------------------------------------
       - name: Download current quest list
         run: |
-          mkdir -p generated
-
-          curl -L \
+          mkdir -p source
+          curl -fsSL \
             https://raw.githubusercontent.com/runelite/runelite/master/runelite-api/src/main/java/net/runelite/api/Quest.java \
-            -o generated/Quest.java
+            -o source/Quest.java
 
-          test -s generated/Quest.java
-
-
-      # ============================================================
-      # GENERATE QUEST DATABASE
-      # ============================================================
-
-      - name: Generate QuestMate quest database
+      # ------------------------------------------------------------
+      # DOWNLOAD QUEST HELPER
+      # ------------------------------------------------------------
+      - name: Download Quest Helper source
         run: |
+          git clone --depth 1 https://github.com/Zoinkwiz/quest-helper.git quest-helper
 
+      # ------------------------------------------------------------
+      # GENERATE QUEST DATABASE
+      # ------------------------------------------------------------
+      - name: Generate QuestMate quest database
+        shell: bash
+        run: |
           cat > generate_quests.py <<'PYTHON'
-
-          import os
-          import re
           import json
+          import re
+          from pathlib import Path
 
-          QUEST_FILE = "generated/Quest.java"
+          QUEST_FILE = Path("source/Quest.java")
+          HELPER_ROOT = Path("quest-helper/src/main/java/com/questhelper/helpers/quests")
+          OUTPUT = Path("generated/quests.json")
 
-          HELPER_ROOT = (
-              "quest-helper/src/main/java/"
-              "com/questhelper/helpers/quests"
-          )
+          OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
-          OUTPUT = "generated/quests.json"
-
-
-          # ----------------------------------------------------------
-          # NORMALISE NAMES
-          # ----------------------------------------------------------
-
-          def normalise(value):
-
-              return re.sub(
-                  r"[^a-z0-9]",
-                  "",
-                  value.lower()
-              )
-
-
-          # ----------------------------------------------------------
-          # READ RUNELITE QUEST LIST
-          # ----------------------------------------------------------
-
-          with open(
-              QUEST_FILE,
-              "r",
-              encoding="utf-8"
-          ) as file:
-
-              quest_source = file.read()
-
-
-          quest_names = []
-
-          pattern = re.compile(
-              r"\b[A-Z0-9_]+\s*\(\s*\"([^\"]+)\""
-          )
-
-
-          for title in pattern.findall(
-              quest_source
-          ):
-
-              if title in (
-                  "None",
-                  "Unknown"
-              ):
-                  continue
-
-              if title not in quest_names:
-                  quest_names.append(title)
-
-
-          print(
-              "Current RuneLite quest names:",
-              len(quest_names)
-          )
-
-
-          # ----------------------------------------------------------
-          # CURRENT F2P QUESTS
-          # ----------------------------------------------------------
-          #
-          # 24 F2P quests as of July 2026.
-          # ----------------------------------------------------------
-
+          # Current OSRS free-to-play quests.
           F2P = {
-
               "Black Knights' Fortress",
-
               "Below Ice Mountain",
-
               "Cook's Assistant",
-
               "Demon Slayer",
-
               "Doric's Quest",
-
               "Dragon Slayer I",
-
               "Ernest the Chicken",
-
               "Goblin Diplomacy",
-
               "The Corsair Curse",
-
               "The Ides of Milk",
-
               "Imp Catcher",
-
               "Learning the Ropes",
-
               "Misthalin Mystery",
-
               "Pirate's Treasure",
-
               "Prince Ali Rescue",
-
               "The Restless Ghost",
-
               "Romeo & Juliet",
-
               "Rune Mysteries",
-
               "Sheep Shearer",
-
               "Shield of Arrav",
-
               "The Knight's Sword",
-
               "Vampyre Slayer",
-
               "Witch's Potion",
-
               "X Marks the Spot"
           }
 
-
-          # ----------------------------------------------------------
-          # FIND QUEST HELPER FILES
-          # ----------------------------------------------------------
-
-          helper_files = []
-
-          for root, dirs, files in os.walk(
-              HELPER_ROOT
-          ):
-
-              for filename in files:
-
-                  if filename.endswith(".java"):
-
-                      helper_files.append(
-                          os.path.join(
-                              root,
-                              filename
-                          )
-                      )
-
-
-          print(
-              "Quest Helper Java files:",
-              len(helper_files)
-          )
-
-
-          # ----------------------------------------------------------
-          # LOAD HELPER SOURCES
-          # ----------------------------------------------------------
-
-          helpers = {}
-
-          for path in helper_files:
-
-              try:
-
-                  with open(
-                      path,
-                      "r",
-                      encoding="utf-8"
-                  ) as file:
-
-                      source = file.read()
-
-
-                  class_match = re.search(
-                      r"(?:public\s+)?class\s+([A-Za-z0-9_]+)",
-                      source
-                  )
-
-
-                  if not class_match:
-                      continue
-
-
-                  class_name =
-                  class_match.group(1)
-
-
-                  helpers[
-                      normalise(class_name)
-                  ] = source
-
-
-              except Exception as error:
-
-                  print(
-                      "Helper read error:",
-                      path,
-                      error
-                  )
-
-
-          # ----------------------------------------------------------
-          # EXTRACT READABLE STRINGS
-          # ----------------------------------------------------------
-
-          def readable_strings(text):
-
-              values = re.findall(
-                  r'"((?:\\.|[^"\\])*)"',
-                  text,
-                  re.DOTALL
-              )
-
-              result = []
-
-              for value in values:
-
-                  value = value.replace(
-                      "\\n",
-                      " "
-                  )
-
-                  value = value.replace(
-                      "\\t",
-                      " "
-                  )
-
-                  value = value.replace(
-                      '\\"',
-                      '"'
-                  )
-
-                  value = re.sub(
-                      r"\s+",
-                      " ",
-                      value
-                  ).strip()
-
-
-                  if len(value) < 8:
-                      continue
-
-
-                  if value.startswith(
-                      (
-                          "ItemID.",
-                          "NpcID.",
-                          "ObjectID.",
-                          "WorldPoint",
-                          "TileObject"
-                      )
-                  ):
-                      continue
-
-
-                  # Ignore URLs.
-                  if value.startswith(
-                      (
-                          "http://",
-                          "https://"
-                      )
-                  ):
-                      continue
-
-
-                  if value not in result:
-
-                      result.append(value)
-
-
-              return result
-
-
-          # ----------------------------------------------------------
-          # EXTRACT ITEMS
-          # ----------------------------------------------------------
-
-          def get_items(source):
-
-              result = []
-
-
-              patterns = [
-
-                  r'ItemRequirement\s*\(\s*"([^"]+)"',
-
-                  r'ItemRequirement\s*\(\s*ItemID\.([A-Z0-9_]+)'
-              ]
-
-
-              for pattern in patterns:
-
-                  for value in re.findall(
-                      pattern,
-                      source
-                  ):
-
-                      if value not in result:
-
-                          result.append(value)
-
-
-              return result
-
-
-          # ----------------------------------------------------------
-          # EXTRACT SKILL REQUIREMENTS
-          # ----------------------------------------------------------
-
-          def get_skills(source):
-
-              result = []
-
-
-              pattern = re.compile(
-                  r"SkillRequirement\s*\("
-                  r"\s*Skill\.([A-Z0-9_]+)"
-                  r"\s*,\s*(\d+)"
-              )
-
-
-              for skill, level in pattern.findall(
-                  source
-              ):
-
-                  skill = skill.replace(
-                      "_",
-                      " "
-                  ).title()
-
-
-                  value = (
-                      skill
-                      + " "
-                      + level
-                  )
-
-
-                  if value not in result:
-
-                      result.append(value)
-
-
-              return result
-
-
-          # ----------------------------------------------------------
-          # EXTRACT QUEST POINT REWARD
-          # ----------------------------------------------------------
-
-          def get_qp(source):
-
-              matches = re.findall(
-                  r"QuestPointReward\s*\(\s*(\d+)\s*\)",
-                  source
-              )
-
-
-              if not matches:
-
-                  return 0
-
-
-              return max(
-                  int(value)
-                  for value in matches
-              )
-
-
-          # ----------------------------------------------------------
-          # EXTRACT WALKTHROUGH STEPS
-          # ----------------------------------------------------------
-
-          def get_steps(source):
-
-              if not source:
-
-                  return []
-
-
-              strings = readable_strings(
-                  source
-              )
-
-
-              steps = []
-
-
-              # Prefer strings that look like
-              # instructions rather than names.
-              for value in strings:
-
-                  lower = value.lower()
-
-
-                  instruction_words = (
-
-                      "talk",
-                      "go",
-                      "travel",
-                      "use",
-                      "take",
-                      "get",
-                      "kill",
-                      "search",
-                      "open",
-                      "enter",
-                      "leave",
-                      "return",
-                      "speak",
-                      "give",
-                      "use",
-                      "equip",
-                      "wear",
-                      "mine",
-                      "fish",
-                      "cook",
-                      "smelt",
-                      "craft",
-                      "pick",
-                      "bank",
-                      "teleport",
-                      "climb",
-                      "follow",
-                      "start",
-                      "finish"
-                  )
-
-
-                  looks_like_step = any(
-                      word in lower
-                      for word in instruction_words
-                  )
-
-
-                  if looks_like_step:
-
-                      if value not in steps:
-
-                          steps.append(value)
-
-
-              # Limit obvious junk.
-              steps = [
-                  value
-                  for value in steps
-                  if len(value) <= 500
-              ]
-
-
-              return steps
-
-
-          # ----------------------------------------------------------
-          # GENERATE
-          # ----------------------------------------------------------
-
-          database = []
-
-
-          for title in quest_names:
-
-              source = helpers.get(
-                  normalise(title),
-                  ""
-              )
-
-
-              steps = get_steps(
-                  source
-              )
-
-
-              items = get_items(
-                  source
-              )
-
-
-              skills = get_skills(
-                  source
-              )
-
-
-              qp = get_qp(
-                  source
-              )
-
-
-              # Always provide a usable quest page.
-              if not steps:
-
-                  steps = [
-                      "Start this quest at its starting location "
-                      "and follow the quest objectives."
-                  ]
-
-
-              database.append({
-
-                  "title": title,
-
-                  "members": (
-                      title not in F2P
-                  ),
-
-                  "questPoints": qp,
-
-                  "requirements": skills,
-
-                  "items": items,
-
-                  "steps": steps
-              })
-
-
-          # ----------------------------------------------------------
-          # SORT
-          # ----------------------------------------------------------
-
-          database.sort(
-              key=lambda quest:
-                  quest["title"].lower()
-          )
-
-
-          # ----------------------------------------------------------
-          # WRITE DATABASE
-          # ----------------------------------------------------------
-
-          os.makedirs(
-              "generated",
-              exist_ok=True
-          )
-
-
-          with open(
-              OUTPUT,
-              "w",
-              encoding="utf-8"
-          ) as file:
-
-              json.dump(
-                  database,
-                  file,
-                  ensure_ascii=False,
-                  indent=2
-              )
-
-
-          print(
-              "=========================================="
-          )
-
-          print(
-              "QUEST DATABASE CREATED"
-          )
-
-          print(
-              "Total:",
-              len(database)
-          )
-
-          print(
-              "F2P:",
-              sum(
-                  1
-                  for quest in database
-                  if not quest["members"]
-              )
-          )
-
-          print(
-              "Members:",
-              sum(
-                  1
-                  for quest in database
-                  if quest["members"]
-              )
-          )
-
-          print(
-              "=========================================="
-          )
-
-          PYTHON
-
-          python3 generate_quests.py
-
-          test -s generated/quests.json
-
-          cp \
-            generated/quests.json \
-            quest-helper/QUESTMATE_QUESTS.json
-
-          ls -lh \
-            generated/quests.json
-
-
-      # ============================================================
-      # CREATE ANDROID PROJECT
-      # ============================================================
-
-      - name: Create Android project
-        run: |
-
-          mkdir -p questmate/app/src/main/java/com/questmate/app
-
-          mkdir -p questmate/app/src/main/res/values
-
-          mkdir -p questmate/app/src/main/assets
-
-          cp \
-            generated/quests.json \
-            questmate/app/src/main/assets/quests.json
-
-          cp \
-            quest-helper/LICENSE \
-            questmate/app/src/main/assets/QUEST_HELPER_LICENSE.txt
-
-
-      # ============================================================
-      # SETTINGS
-      # ============================================================
-
-      - name: Create settings.gradle
-        run: |
-
-          cat > questmate/settings.gradle <<'EOF'
-
-          pluginManagement {
-
-              repositories {
-
-                  google()
-
-                  mavenCentral()
-
-                  gradlePluginPortal()
-              }
-          }
-
-
-          dependencyResolutionManagement {
-
-              repositoriesMode.set(
-                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
-              )
-
-              repositories {
-
-                  google()
-
-                  mavenCentral()
-              }
-          }
-
-
-          rootProject.name =
-              "QuestMate"
-
-
-          include(":app")
-
-          EOF
-
-
-      # ============================================================
-      # ROOT GRADLE
-      # ============================================================
-
-      - name: Create build.gradle
-        run: |
-
-          cat > questmate/build.gradle <<'EOF'
-
-          plugins {
-
-              id 'com.android.application'
-                  version '8.7.3'
-                  apply false
-          }
-
-          EOF
-
-
-      # ============================================================
-      # GRADLE PROPERTIES
-      # ============================================================
-
-      - name: Create gradle.properties
-        run: |
-
-          cat > questmate/gradle.properties <<'EOF'
-
-          android.useAndroidX=true
-
-          android.enableJetifier=true
-
-          EOF
-
-
-      # ============================================================
-      # APP GRADLE
-      # ============================================================
-
-      - name: Create app build.gradle
-        run: |
-
-          cat > questmate/app/build.gradle <<'EOF'
-
-          plugins {
-
-              id 'com.android.application'
-          }
-
-
-          android {
-
-              namespace 'com.questmate.app'
-
-              compileSdk 35
-
-
-              defaultConfig {
-
-                  applicationId 'com.questmate.app'
-
-                  minSdk 23
-
-                  targetSdk 35
-
-                  versionCode 1
-
-                  versionName '1.0'
-              }
-          }
-
-          EOF
-
-
-      # ============================================================
-      # MANIFEST
-      # ============================================================
-
-      - name: Create AndroidManifest.xml
-        run: |
-
-          cat > questmate/app/src/main/AndroidManifest.xml <<'EOF'
-
-          <?xml version="1.0" encoding="utf-8"?>
-
-          <manifest
-              xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <application
-                  android:theme="@style/AppTheme"
-                  android:label="QuestMate"
-                  android:allowBackup="false"
-                  android:supportsRtl="true">
-
-
-                  <activity
-                      android:name=".QuestDetailActivity"
-                      android:exported="false" />
-
-
-                  <activity
-                      android:name=".QuestActivity"
-                      android:exported="false" />
-
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-
-
-                      <intent-filter>
-
-                          <action
-                              android:name="android.intent.action.MAIN" />
-
-                          <category
-                              android:name="android.intent.category.LAUNCHER" />
-
-                      </intent-filter>
-
-
-                  </activity>
-
-
-              </application>
-
-          </manifest>
-
-          EOF
-
-
-      # ============================================================
-      # STYLE
-      # ============================================================
-
-      - name: Create styles.xml
-        run: |
-
-        
+          # Entries in RuneLite's Quest enum which are not normal
+          # main quests for the QuestMate quest list.
+          EXCLUDED = {
+              "Bear Your Soul",
+              "Daddy's Home",
+              "Curse of the Empty Lord",
+              "The Enchanted Key",
+              "Enter the Abyss",
+              "Lair of Tarn Razorlor",
+              "Mage Arena I",
+              "Mage Arena II",
+              "Skippy and the Mogres",
+              "The Frozen Door",
+              "Hopespear's Will",
+              "His Faithful Servants",
+              "Barbarian Training",
+              "Vale Totems
