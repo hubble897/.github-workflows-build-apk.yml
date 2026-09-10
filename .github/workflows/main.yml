@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -28,7 +29,369 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Create QuestMate Android project
+      - name: Download Quest Helper source
+        run: |
+          git clone --depth 1 https://github.com/Zoinkwiz/quest-helper.git quest-helper-source
+
+          mkdir -p questmate/app/src/main/assets
+
+          cp quest-helper-source/LICENSE \
+             questmate/app/src/main/assets/QUEST_HELPER_LICENSE.txt
+
+      - name: Download RuneLite quest names
+        run: |
+          wget -q \
+            https://raw.githubusercontent.com/runelite/runelite/master/runelite-api/src/main/java/net/runelite/api/Quest.java \
+            -O quest-enum.java
+
+      - name: Generate QuestMate quest database
+        run: |
+          cat > generate_quests.py <<'PYTHON'
+          import json
+          import re
+          from pathlib import Path
+
+          SOURCE = Path("quest-helper-source/src/main/java/com/questhelper/helpers/quests")
+          ENUM_FILE = Path("quest-enum.java")
+          OUTPUT = Path("questmate/app/src/main/assets/quests.json")
+
+          # Current F2P quests.
+          F2P = {
+              "Cook's Assistant",
+              "Demon Slayer",
+              "Dragon Slayer I",
+              "Doric's Quest",
+              "Ernest the Chicken",
+              "Goblin Diplomacy",
+              "Imp Catcher",
+              "The Knight's Sword",
+              "Misthalin Mystery",
+              "Pirate's Treasure",
+              "Prince Ali Rescue",
+              "The Restless Ghost",
+              "Romeo & Juliet",
+              "Rune Mysteries",
+              "Sheep Shearer",
+              "Shield of Arrav",
+              "The Corsair Curse",
+              "Vampyre Slayer",
+              "Witch's Potion",
+              "X Marks the Spot",
+              "Black Knights' Fortress",
+              "Below Ice Mountain",
+              "Learning the Ropes",
+              "The Ides of Milk"
+          }
+
+          def normalise(value):
+              return re.sub(r"[^a-z0-9]", "", value.lower())
+
+          def humanise_class(value):
+              value = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", value)
+              return value.replace("_", " ").strip()
+
+          def decode_string(value):
+              try:
+                  return json.loads('"' + value + '"')
+              except Exception:
+                  return value.replace('\\"', '"').replace("\\\\", "\\")
+
+          def find_balanced(text, start):
+              depth = 0
+              quote = False
+              escape = False
+
+              for i in range(start, len(text)):
+                  c = text[i]
+
+                  if quote:
+                      if escape:
+                          escape = False
+                      elif c == "\\":
+                          escape = True
+                      elif c == '"':
+                          quote = False
+                      continue
+
+                  if c == '"':
+                      quote = True
+                  elif c == "(":
+                      depth += 1
+                  elif c == ")":
+                      depth -= 1
+
+                      if depth == 0:
+                          return text[start + 1:i], i
+
+              return "", len(text)
+
+          def quoted_strings(text):
+              values = []
+
+              for match in re.finditer(r'"((?:\\.|[^"\\])*)"', text, re.S):
+                  values.append(decode_string(match.group(1)))
+
+              return values
+
+          # ------------------------------------------------------------
+          # Read the official RuneLite quest enum names.
+          # ------------------------------------------------------------
+
+          enum_text = ENUM_FILE.read_text(encoding="utf-8")
+
+          quest_names = {}
+
+          for match in re.finditer(
+              r"^\s*([A-Z0-9_]+)\([^,]+,\s*\"((?:\\.|[^\"\\])*)\"\)",
+              enum_text,
+              re.MULTILINE
+          ):
+              enum_name = match.group(1)
+              display_name = decode_string(match.group(2))
+
+              quest_names[normalise(enum_name)] = display_name
+              quest_names[normalise(display_name)] = display_name
+
+          # ------------------------------------------------------------
+          # Read every Quest Helper Java helper.
+          # ------------------------------------------------------------
+
+          quests = []
+
+          for source_file in sorted(SOURCE.rglob("*.java")):
+
+              text = source_file.read_text(
+                  encoding="utf-8",
+                  errors="ignore"
+              )
+
+              if "extends BasicQuestHelper" not in text:
+                  continue
+
+              class_match = re.search(
+                  r"\bclass\s+([A-Za-z0-9_]+)\s+extends\s+BasicQuestHelper",
+                  text
+              )
+
+              if not class_match:
+                  continue
+
+              class_name = class_match.group(1)
+
+              lookup_keys = [
+                  normalise(class_name),
+                  normalise(class_name.replace("Quest", "")),
+                  normalise(source_file.parent.name)
+              ]
+
+              quest_name = None
+
+              for key in lookup_keys:
+                  if key in quest_names:
+                      quest_name = quest_names[key]
+                      break
+
+              if not quest_name:
+                  quest_name = humanise_class(class_name)
+
+              # --------------------------------------------------------
+              # Extract step descriptions.
+              # --------------------------------------------------------
+
+              step_descriptions = {}
+              step_order = []
+
+              step_pattern = re.compile(
+                  r"(?m)^\s*(\w+)\s*=\s*new\s+\w*Step\s*\("
+              )
+
+              for match in step_pattern.finditer(text):
+
+                  variable = match.group(1)
+
+                  body, end_pos = find_balanced(
+                      text,
+                      text.find("(", match.start())
+                  )
+
+                  if not body:
+                      continue
+
+                  strings = quoted_strings(body)
+
+                  if not strings:
+                      continue
+
+                  description = strings[0].strip()
+
+                  if not description:
+                      continue
+
+                  if variable not in step_descriptions:
+                      step_descriptions[variable] = description
+                      step_order.append(variable)
+
+              # --------------------------------------------------------
+              # Extract PanelDetails groups.
+              # --------------------------------------------------------
+
+              panels = []
+
+              panel_pattern = re.compile(
+                  r"new\s+PanelDetails\s*\(\s*\"((?:\\.|[^\"\\])*)\"\s*,",
+                  re.MULTILINE
+              )
+
+              for match in panel_pattern.finditer(text):
+
+                  panel_title = decode_string(match.group(1))
+
+                  opening = text.find(
+                      "(",
+                      match.start()
+                  )
+
+                  body, _ = find_balanced(
+                      text,
+                      opening
+                  )
+
+                  if not body:
+                      continue
+
+                  list_match = re.search(
+                      r"List\.of\s*\(",
+                      body
+                  )
+
+                  if not list_match:
+                      continue
+
+                  list_body, _ = find_balanced(
+                      body,
+                      list_match.start() + body[list_match.start():].find("(")
+                  )
+
+                  variables = re.findall(
+                      r"\b[A-Za-z_][A-Za-z0-9_]*\b",
+                      list_body
+                  )
+
+                  steps = []
+
+                  for variable in variables:
+                      if variable in step_descriptions:
+                          description = step_descriptions[variable]
+
+                          if description not in steps:
+                              steps.append(description)
+
+                  if steps:
+                      panels.append({
+                          "title": panel_title,
+                          "steps": steps
+                      })
+
+              # --------------------------------------------------------
+              # If no panels were found, use all discovered steps.
+              # --------------------------------------------------------
+
+              if not panels:
+
+                  fallback_steps = []
+
+                  for variable in step_order:
+                      description = step_descriptions[variable]
+
+                      if description not in fallback_steps:
+                          fallback_steps.append(description)
+
+                  if fallback_steps:
+                      panels.append({
+                          "title": "Walkthrough",
+                          "steps": fallback_steps
+                      })
+
+              # --------------------------------------------------------
+              # Required items.
+              # --------------------------------------------------------
+
+              items = []
+
+              for match in re.finditer(
+                  r'new\s+ItemRequirement\s*\(\s*"((?:\\.|[^"\\])*)"',
+                  text
+              ):
+                  item = decode_string(match.group(1)).strip()
+
+                  if item and item not in items:
+                      items.append(item)
+
+              # --------------------------------------------------------
+              # Quest point reward.
+              # --------------------------------------------------------
+
+              qp_match = re.search(
+                  r"new\s+QuestPointReward\s*\(\s*(\d+)",
+                  text
+              )
+
+              quest_points = int(qp_match.group(1)) if qp_match else 0
+
+              quests.append({
+                  "name": quest_name,
+                  "members": quest_name not in F2P,
+                  "questPoints": quest_points,
+                  "items": items,
+                  "panels": panels
+              })
+
+          # Remove duplicate quest names.
+          unique = {}
+
+          for quest in quests:
+              unique[quest["name"]] = quest
+
+          quests = list(unique.values())
+
+          quests.sort(
+              key=lambda q: q["name"].lower()
+          )
+
+          OUTPUT.parent.mkdir(
+              parents=True,
+              exist_ok=True
+          )
+
+          OUTPUT.write_text(
+              json.dumps(
+                  quests,
+                  ensure_ascii=False,
+                  indent=2
+              ),
+              encoding="utf-8"
+          )
+
+          print("QuestMate quest database created.")
+          print("Quest entries:", len(quests))
+
+          if len(quests) < 150:
+              raise SystemExit(
+                  "ERROR: Too few quest helpers were detected."
+              )
+
+          print("Quest database verification passed.")
+          PYTHON
+
+          python3 generate_quests.py
+
+          echo "Quest database size:"
+          ls -lh questmate/app/src/main/assets/quests.json
+
+          echo "First part of quest database:"
+          head -40 questmate/app/src/main/assets/quests.json
+
+      - name: Create Android project
         run: |
           mkdir -p questmate/app/src/main/java/com/questmate/app
           mkdir -p questmate/app/src/main/res/values
@@ -44,6 +407,7 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
               repositories {
                   google()
                   mavenCentral()
@@ -78,8 +442,8 @@ jobs:
                   applicationId 'com.questmate.app'
                   minSdk 23
                   targetSdk 35
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '2.0'
               }
           }
           EOF
@@ -95,6 +459,18 @@ jobs:
                   android:label="QuestMate"
                   android:allowBackup="true"
                   android:supportsRtl="true">
+
+                  <activity
+                      android:name=".PriceActivity"
+                      android:screenOrientation="portrait" />
+
+                  <activity
+                      android:name=".QuestDetailActivity"
+                      android:screenOrientation="portrait" />
+
+                  <activity
+                      android:name=".QuestActivity"
+                      android:screenOrientation="portrait" />
 
                   <activity
                       android:name=".MainActivity"
@@ -122,19 +498,26 @@ jobs:
 
                   <item name="android:fontFamily">sans</item>
                   <item name="android:colorAccent">#4CAF50</item>
+                  <item name="android:navigationBarColor">#FFFFFF</item>
+                  <item name="android:statusBarColor">#FFFFFF</item>
+                  <item name="android:windowLightStatusBar">true</item>
 
               </style>
 
           </resources>
           EOF
 
+      - name: Create MainActivity
+        run: |
           cat > questmate/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
           package com.questmate.app;
 
           import android.app.Activity;
-          import android.os.Bundle;
+          import android.content.Intent;
           import android.graphics.Color;
+          import android.os.Bundle;
           import android.view.Gravity;
+          import android.view.View;
           import android.widget.Button;
           import android.widget.LinearLayout;
           import android.widget.TextView;
@@ -147,79 +530,106 @@ jobs:
 
                   LinearLayout layout = new LinearLayout(this);
                   layout.setOrientation(LinearLayout.VERTICAL);
-                  layout.setPadding(30, 40, 30, 30);
+                  layout.setPadding(30, 50, 30, 30);
 
                   TextView title = new TextView(this);
                   title.setText("QuestMate");
-                  title.setTextSize(30);
+                  title.setTextSize(32);
                   title.setTextColor(Color.BLACK);
                   title.setGravity(Gravity.CENTER);
-                  title.setPadding(0, 0, 0, 20);
+                  title.setPadding(0, 0, 0, 10);
 
                   TextView subtitle = new TextView(this);
-                  subtitle.setText("OSRS Quest Guide");
-                  subtitle.setTextSize(20);
+                  subtitle.setText("OSRS Quest & Grand Exchange Companion");
+                  subtitle.setTextSize(18);
                   subtitle.setGravity(Gravity.CENTER);
-                  subtitle.setPadding(0, 0, 0, 30);
+                  subtitle.setPadding(0, 0, 0, 35);
 
                   Button quests = new Button(this);
-                  quests.setText("Quests");
+                  quests.setText("QUESTS");
+
+                  quests.setOnClickListener(v ->
+                      startActivity(
+                          new Intent(
+                              MainActivity.this,
+                              QuestActivity.class
+                          )
+                      )
+                  );
 
                   Button prices = new Button(this);
-                  prices.setText("OSRS Price Checker");
+                  prices.setText("OSRS GRAND EXCHANGE PRICE CHECKER");
+
+                  prices.setOnClickListener(v ->
+                      startActivity(
+                          new Intent(
+                              MainActivity.this,
+                              PriceActivity.class
+                          )
+                      )
+                  );
+
+                  TextView info = new TextView(this);
+                  info.setText(
+                      "QuestMate walkthrough data is derived from the " +
+                      "open-source Quest Helper project.\\n\\n" +
+                      "Quest progress is saved on this device."
+                  );
+
+                  info.setTextSize(14);
+                  info.setTextColor(Color.DKGRAY);
+                  info.setGravity(Gravity.CENTER);
+                  info.setPadding(10, 35, 10, 10);
 
                   layout.addView(title);
                   layout.addView(subtitle);
                   layout.addView(quests);
                   layout.addView(prices);
+                  layout.addView(info);
 
                   setContentView(layout);
               }
           }
           EOF
 
-      - name: Install Gradle
+      - name: Create QuestActivity
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q gradle-8.9-bin.zip
-          chmod +x gradle-8.9/bin/gradle
+          cat > questmate/app/src/main/java/com/questmate/app/QuestActivity.java <<'EOF'
+          package com.questmate.app;
 
-      - name: Build APK
-        working-directory: questmate
-        run: |
-          ../gradle-8.9/bin/gradle clean assembleDebug --no-daemon --stacktrace
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.text.Editable;
+          import android.text.TextWatcher;
+          import android.view.ViewGroup;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.Spinner;
+          import android.widget.ArrayAdapter;
+          import android.view.View;
 
-      - name: Verify APK exists
-        run: |
-          echo "Searching for APK..."
-          find questmate -type f -name "*.apk" -print
+          import org.json.JSONArray;
+          import org.json.JSONObject;
 
-          test -f questmate/app/build/outputs/apk/debug/app-debug.apk
+          import java.io.BufferedReader;
+          import java.io.InputStreamReader;
+          import java.util.ArrayList;
+          import java.util.List;
 
-          echo "APK found:"
-          ls -lh questmate/app/build/outputs/apk/debug/app-debug.apk
+          public class QuestActivity extends Activity {
 
-      - name: Prepare APK
-        run: |
-          rm -rf dist
-          mkdir -p dist
+              private final List<JSONObject> quests = new ArrayList<>();
+              private LinearLayout listLayout;
+              private EditText search;
+              private Spinner filter;
 
-          cp questmate/app/build/outputs/apk/debug/app-debug.apk \
-             dist/QuestMate.apk
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
 
-          echo "Prepared APK:"
-          ls -lh dist/QuestMate.apk
-
-          echo "APK information:"
-          file dist/QuestMate.apk
-
-          echo "APK SHA256:"
-          sha256sum dist/QuestMate.apk
-
-      - name: Upload QuestMate APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: QuestMate-APK
-          path: dist/QuestMate.apk
-          if-no-files-found: error
-          retention-days: 30
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+          
