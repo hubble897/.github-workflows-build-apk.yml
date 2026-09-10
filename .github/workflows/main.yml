@@ -1,14 +1,10 @@
 name: Build QuestMate APK
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   build:
@@ -16,18 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ========================================================
-      # CHECKOUT
-      # ========================================================
-
       - name: Checkout
         uses: actions/checkout@v4
-
-
-      # ========================================================
-      # JAVA
-      # ========================================================
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -35,50 +21,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-
-      # ========================================================
-      # ANDROID SDK
-      # ========================================================
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
         run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-
-      # ========================================================
-      # GRADLE
-      # ========================================================
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-
-      # ========================================================
-      # CREATE PROJECT DIRECTORIES
-      # ========================================================
-
-      - name: Create project directories
+      - name: Create QuestMate Android project
         run: |
-          mkdir -p app/src/main/java/com/questmate/app
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/assets
+          mkdir -p questmate/app/src/main/java/com/questmate/app
+          mkdir -p questmate/app/src/main/res/values
 
-
-      # ========================================================
-      # SETTINGS GRADLE
-      # ========================================================
-
-      - name: Create settings.gradle
-        run: |
-          cat > settings.gradle <<'EOF'
+          cat > questmate/settings.gradle <<'EOF'
           pluginManagement {
               repositories {
                   google()
@@ -99,39 +54,18 @@ jobs:
           include(":app")
           EOF
 
-
-      # ========================================================
-      # ROOT BUILD GRADLE
-      # ========================================================
-
-      - name: Create root build.gradle
-        run: |
-          cat > build.gradle <<'EOF'
+          cat > questmate/build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.7.3' apply false
           }
           EOF
 
-
-      # ========================================================
-      # GRADLE PROPERTIES
-      # ========================================================
-
-      - name: Create gradle.properties
-        run: |
-          cat > gradle.properties <<'EOF'
+          cat > questmate/gradle.properties <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
           EOF
 
-
-      # ========================================================
-      # APP BUILD GRADLE
-      # ========================================================
-
-      - name: Create app build.gradle
-        run: |
-          cat > app/build.gradle <<'EOF'
+          cat > questmate/app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
           }
@@ -144,31 +78,23 @@ jobs:
                   applicationId 'com.questmate.app'
                   minSdk 23
                   targetSdk 35
-                  versionCode 4
-                  versionName '4.0'
+                  versionCode 1
+                  versionName '1.0'
               }
           }
           EOF
 
-
-      # ========================================================
-      # MANIFEST
-      # ========================================================
-
-      - name: Create AndroidManifest.xml
-        run: |
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          cat > questmate/app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
               <uses-permission android:name="android.permission.INTERNET" />
 
               <application
-                  android:allowBackup="true"
+                  android:theme="@style/AppTheme"
                   android:label="QuestMate"
-                  android:supportsRtl="true"
-                  android:theme="@style/AppTheme">
+                  android:allowBackup="true"
+                  android:supportsRtl="true">
 
                   <activity
                       android:name=".MainActivity"
@@ -187,537 +113,113 @@ jobs:
           </manifest>
           EOF
 
-
-      # ========================================================
-      # THEME
-      # ========================================================
-
-      - name: Create theme
-        run: |
-          cat > app/src/main/res/values/styles.xml <<'EOF'
+          cat > questmate/app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-
           <resources>
 
-              <style
-                  name="AppTheme"
+              <style name="AppTheme"
                   parent="android:style/Theme.Material.Light.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#66BB6A</item>
-                  <item name="android:navigationBarColor">#10131A</item>
-                  <item name="android:statusBarColor">#10131A</item>
+                  <item name="android:colorAccent">#4CAF50</item>
 
               </style>
 
           </resources>
           EOF
 
-
-      # ========================================================
-      # DOWNLOAD QUEST HELPER
-      # ========================================================
-
-      - name: Download Quest Helper
-        run: |
-          git clone --depth 1 \
-            https://github.com/Zoinkwiz/quest-helper.git \
-            quest-helper-source
-
-          cp quest-helper-source/LICENSE \
-            app/src/main/assets/QUEST_HELPER_LICENSE.txt
-
-
-      # ========================================================
-      # CREATE QUEST DATABASE GENERATOR
-      # ========================================================
-
-      - name: Create quest database generator
-        run: |
-          cat > generate_quests.py <<'PY'
-          import json
-          import re
-          from pathlib import Path
-
-          SOURCE = Path("quest-helper-source/src/main/java")
-          OUTPUT = Path("app/src/main/assets/quests.json")
-
-          F2P_QUESTS = {
-              "Below Ice Mountain",
-              "Black Knights' Fortress",
-              "Cook's Assistant",
-              "Demon Slayer",
-              "Doric's Quest",
-              "Dragon Slayer I",
-              "Ernest the Chicken",
-              "Goblin Diplomacy",
-              "Imp Catcher",
-              "Misthalin Mystery",
-              "Pirate's Treasure",
-              "Prince Ali Rescue",
-              "The Corsair Curse",
-              "The Knight's Sword",
-              "The Restless Ghost",
-              "Romeo & Juliet",
-              "Rune Mysteries",
-              "Sheep Shearer",
-              "Shield of Arrav",
-              "Vampyre Slayer",
-              "Waterfall Quest",
-              "Witch's Potion",
-              "X Marks the Spot",
-          }
-
-          def clean(value):
-              value = value.replace("\\n", " ")
-              value = value.replace('\\"', '"')
-              value = re.sub(r"\s+", " ", value)
-              return value.strip()
-
-          def strings_from_java(text):
-              pattern = r'"((?:\\.|[^"\\])*)"'
-              return [clean(x) for x in re.findall(pattern, text)]
-
-          def is_useful(value):
-              if len(value) < 8:
-                  return False
-
-              if len(value) > 600:
-                  return False
-
-              low = value.lower()
-
-              blocked = [
-                  "com.questhelper",
-                  "net.runelite",
-                  "http://",
-                  "https://",
-                  ".png",
-                  ".jpg",
-                  ".gif",
-                  "worldpoint",
-                  "varbitid.",
-                  "objectid.",
-                  "npcid.",
-                  "itemid.",
-                  "widgetid.",
-                  "animationid.",
-                  "soundid.",
-                  "regionid."
-              ]
-
-              for word in blocked:
-                  if word in low:
-                      return False
-
-              code_count = (
-                  value.count("{")
-                  + value.count("}")
-                  + value.count(";")
-              )
-
-              if code_count >= 3:
-                  return False
-
-              return True
-
-          def readable_name(path):
-              name = path.stem
-
-              name = re.sub(
-                  r"([a-z])([A-Z])",
-                  r"\1 \2",
-                  name
-              )
-
-              name = name.replace("_", " ")
-              name = name.replace("Quest", "")
-              name = re.sub(r"\s+", " ", name)
-
-              return name.strip()
-
-          def build_record(path):
-              try:
-                  text = path.read_text(
-                      encoding="utf-8",
-                      errors="ignore"
-                  )
-              except Exception:
-                  return None
-
-              if "QuestHelper" not in text:
-                  return None
-
-              if "package com.questhelper" not in text:
-                  return None
-
-              name = readable_name(path)
-
-              values = strings_from_java(text)
-
-              steps = []
-              seen = set()
-
-              for value in values:
-                  if not is_useful(value):
-                      continue
-
-                  if value in seen:
-                      continue
-
-                  seen.add(value)
-                  steps.append(value)
-
-              if len(steps) < 3:
-                  return None
-
-              steps = steps[:150]
-
-              return {
-                  "name": name,
-                  "members": name not in F2P_QUESTS,
-                  "difficulty": "See requirements",
-                  "length": "See walkthrough",
-                  "questPoints": 0,
-                  "start": "",
-                  "requirements": [],
-                  "items": [],
-                  "rewards": [],
-                  "walkthrough": steps
-              }
-
-          def main():
-              records = {}
-
-              for path in SOURCE.rglob("*.java"):
-                  record = build_record(path)
-
-                  if record is None:
-                      continue
-
-                  key = record["name"].lower()
-
-                  if key not in records:
-                      records[key] = record
-
-              quests = sorted(
-                  records.values(),
-                  key=lambda item: item["name"].lower()
-              )
-
-              OUTPUT.parent.mkdir(
-                  parents=True,
-                  exist_ok=True
-              )
-
-              with OUTPUT.open(
-                  "w",
-                  encoding="utf-8"
-              ) as file:
-                  json.dump(
-                      quests,
-                      file,
-                      ensure_ascii=False,
-                      indent=2
-                  )
-
-              print("Quest records:", len(quests))
-
-              if len(quests) < 100:
-                  raise RuntimeError(
-                      "Quest database contains too few quests."
-                  )
-
-          if __name__ == "__main__":
-              main()
-          PY
-
-          python generate_quests.py
-
-          echo "Quest database created:"
-          ls -lh app/src/main/assets/quests.json
-
-
-      # ========================================================
-      # CREATE MAIN ACTIVITY
-      # ========================================================
-
-      - name: Create MainActivity
-        run: |
-          cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
+          cat > questmate/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
           package com.questmate.app;
 
           import android.app.Activity;
           import android.os.Bundle;
           import android.graphics.Color;
-          import android.graphics.Typeface;
-          import android.view.View;
+          import android.view.Gravity;
           import android.widget.Button;
-          import android.widget.CheckBox;
-          import android.widget.EditText;
           import android.widget.LinearLayout;
-          import android.widget.ScrollView;
           import android.widget.TextView;
-          import android.widget.Toast;
-
-          import org.json.JSONArray;
-          import org.json.JSONObject;
-
-          import java.io.InputStream;
-          import java.nio.charset.StandardCharsets;
-
 
           public class MainActivity extends Activity {
-
-              private LinearLayout content;
-              private EditText searchBox;
-              private JSONArray quests;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  createHome();
+                  LinearLayout layout = new LinearLayout(this);
+                  layout.setOrientation(LinearLayout.VERTICAL);
+                  layout.setPadding(30, 40, 30, 30);
 
-                  loadQuests();
-              }
-
-              private void createHome() {
-
-                  LinearLayout root =
-                      new LinearLayout(this);
-
-                  root.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  root.setPadding(
-                      20,
-                      25,
-                      20,
-                      20
-                  );
-
-                  TextView title =
-                      new TextView(this);
-
+                  TextView title = new TextView(this);
                   title.setText("QuestMate");
-
                   title.setTextSize(30);
-
-                  title.setTypeface(
-                      Typeface.DEFAULT,
-                      Typeface.BOLD
-                  );
-
                   title.setTextColor(Color.BLACK);
+                  title.setGravity(Gravity.CENTER);
+                  title.setPadding(0, 0, 0, 20);
 
-                  root.addView(title);
+                  TextView subtitle = new TextView(this);
+                  subtitle.setText("OSRS Quest Guide");
+                  subtitle.setTextSize(20);
+                  subtitle.setGravity(Gravity.CENTER);
+                  subtitle.setPadding(0, 0, 0, 30);
 
-                  TextView subtitle =
-                      new TextView(this);
+                  Button quests = new Button(this);
+                  quests.setText("Quests");
 
-                  subtitle.setText(
-                      "OSRS Quest Guide"
-                  );
+                  Button prices = new Button(this);
+                  prices.setText("OSRS Price Checker");
 
-                  subtitle.setTextSize(18);
+                  layout.addView(title);
+                  layout.addView(subtitle);
+                  layout.addView(quests);
+                  layout.addView(prices);
 
-                  root.addView(subtitle);
-
-                  searchBox =
-                      new EditText(this);
-
-                  searchBox.setHint(
-                      "Search quests..."
-                  );
-
-                  root.addView(searchBox);
-
-                  LinearLayout filters =
-                      new LinearLayout(this);
-
-                  filters.setOrientation(
-                      LinearLayout.HORIZONTAL
-                  );
-
-                  Button all =
-                      new Button(this);
-
-                  all.setText("ALL");
-
-                  Button f2p =
-                      new Button(this);
-
-                  f2p.setText("F2P");
-
-                  Button members =
-                      new Button(this);
-
-                  members.setText("MEMBERS");
-
-                  filters.addView(all);
-                  filters.addView(f2p);
-                  filters.addView(members);
-
-                  root.addView(filters);
-
-                  ScrollView scroll =
-                      new ScrollView(this);
-
-                  content =
-                      new LinearLayout(this);
-
-                  content.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  scroll.addView(content);
-
-                  root.addView(
-                      scroll,
-                      new LinearLayout.LayoutParams(
-                          -1,
-                          0,
-                          1
-                      )
-                  );
-
-                  setContentView(root);
-
-                  all.setOnClickListener(
-                      v -> showList("all")
-                  );
-
-                  f2p.setOnClickListener(
-                      v -> showList("f2p")
-                  );
-
-                  members.setOnClickListener(
-                      v -> showList("members")
-                  );
-
-                  searchBox.setOnEditorActionListener(
-                      (v, actionId, event) -> {
-                          showList("all");
-                          return false;
-                      }
-                  );
+                  setContentView(layout);
               }
+          }
+          EOF
 
-              private void loadQuests() {
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          chmod +x gradle-8.9/bin/gradle
 
-                  try {
+      - name: Build APK
+        working-directory: questmate
+        run: |
+          ../gradle-8.9/bin/gradle clean assembleDebug --no-daemon --stacktrace
 
-                      InputStream input =
-                          getAssets().open(
-                              "quests.json"
-                          );
+      - name: Verify APK exists
+        run: |
+          echo "Searching for APK..."
+          find questmate -type f -name "*.apk" -print
 
-                      byte[] bytes =
-                          new byte[input.available()];
+          test -f questmate/app/build/outputs/apk/debug/app-debug.apk
 
-                      input.read(bytes);
-                      input.close();
+          echo "APK found:"
+          ls -lh questmate/app/build/outputs/apk/debug/app-debug.apk
 
-                      String json =
-                          new String(
-                              bytes,
-                              StandardCharsets.UTF_8
-                          );
+      - name: Prepare APK
+        run: |
+          rm -rf dist
+          mkdir -p dist
 
-                      quests =
-                          new JSONArray(json);
+          cp questmate/app/build/outputs/apk/debug/app-debug.apk \
+             dist/QuestMate.apk
 
-                      showList("all");
+          echo "Prepared APK:"
+          ls -lh dist/QuestMate.apk
 
-                  } catch (Exception e) {
+          echo "APK information:"
+          file dist/QuestMate.apk
 
-                      Toast.makeText(
-                          this,
-                          "Quest database could not be loaded.",
-                          Toast.LENGTH_LONG
-                      ).show();
-                  }
-              }
+          echo "APK SHA256:"
+          sha256sum dist/QuestMate.apk
 
-              private void showList(String filter) {
-
-                  if (quests == null) {
-                      return;
-                  }
-
-                  content.removeAllViews();
-
-                  String query =
-                      searchBox
-                          .getText()
-                          .toString()
-                          .trim()
-                          .toLowerCase();
-
-                  for (
-                      int i = 0;
-                      i < quests.length();
-                      i++
-                  ) {
-
-                      try {
-
-                          JSONObject quest =
-                              quests.getJSONObject(i);
-
-                          String name =
-                              quest.optString("name");
-
-                          boolean member =
-                              quest.optBoolean(
-                                  "members",
-                                  false
-                              );
-
-                          if (
-                              !query.isEmpty()
-                              &&
-                              !name
-                                  .toLowerCase()
-                                  .contains(query)
-                          ) {
-                              continue;
-                          }
-
-                          if (
-                              filter.equals("f2p")
-                              && member
-                          ) {
-                              continue;
-                          }
-
-                          if (
-                              filter.equals("members")
-                              && !member
-                          ) {
-                              continue;
-                          }
-
-                          Button button =
-                              new Button(this);
-
-                          button.setText(name);
-
-                          button.setOnClickListener(
-                              v -> showQuest(quest)
-                          );
-
-                          content.addView(button);
-
-                      } catch (Exception ignored) {
-                      }
-                  }
-              }
-
-              private void showQuest(
-                      JSONObject quest
-              ) {
-
- 
+      - name: Upload QuestMate APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-APK
+          path: dist/QuestMate.apk
+          if-no-files-found: error
+          retention-days: 30
