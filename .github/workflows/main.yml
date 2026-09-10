@@ -7,7 +7,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -17,10 +17,10 @@ jobs:
 
     steps:
 
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -36,9 +36,9 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      # ==========================================================
+      # =====================================================
       # CREATE PROJECT
-      # ==========================================================
+      # =====================================================
 
       - name: Create QuestMate project
         shell: bash
@@ -87,8 +87,6 @@ jobs:
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
-
-          mkdir -p app
 
           cat > app/build.gradle <<'EOF'
           plugins {
@@ -272,7 +270,6 @@ jobs:
                   );
 
                   header.addView(minimize);
-
                   root.addView(header);
 
                   searchBox = new EditText(this);
@@ -421,7 +418,6 @@ jobs:
 
                       if (text.isEmpty()
                               || quest.name.toLowerCase().contains(text)) {
-
                           addQuestCard(quest);
                       }
                   }
@@ -430,3 +426,202 @@ jobs:
               private void addQuestCard(Quest quest) {
 
                   LinearLayout card = new LinearLayout(this);
+                  card.setOrientation(LinearLayout.VERTICAL);
+                  card.setPadding(20, 18, 20, 18);
+                  card.setBackgroundColor(Color.rgb(35, 35, 35));
+
+                  LinearLayout.LayoutParams params =
+                          new LinearLayout.LayoutParams(
+                                  ViewGroup.LayoutParams.MATCH_PARENT,
+                                  ViewGroup.LayoutParams.WRAP_CONTENT
+                          );
+
+                  params.setMargins(0, 0, 0, 16);
+                  card.setLayoutParams(params);
+
+                  TextView name = new TextView(this);
+                  name.setText(quest.name);
+                  name.setTextColor(Color.WHITE);
+                  name.setTextSize(21);
+                  name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+                  card.addView(name);
+
+                  TextView details = new TextView(this);
+
+                  details.setText(
+                          quest.type
+                                  + " • "
+                                  + quest.difficulty
+                                  + " • "
+                                  + quest.length
+                                  + "\nStart: "
+                                  + quest.start
+                                  + "\nRequirements: "
+                                  + quest.requirements
+                  );
+
+                  details.setTextColor(Color.LTGRAY);
+                  details.setTextSize(15);
+
+                  card.addView(details);
+
+                  Button open = new Button(this);
+                  open.setText("OPEN QUEST");
+
+                  open.setOnClickListener(
+                          v -> showQuestGuide(quest)
+                  );
+
+                  card.addView(open);
+
+                  questList.addView(card);
+              }
+
+              private void showQuestGuide(Quest quest) {
+
+                  questList.removeAllViews();
+
+                  TextView heading = new TextView(this);
+                  heading.setText(quest.name);
+                  heading.setTextColor(Color.WHITE);
+                  heading.setTextSize(25);
+                  heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+                  questList.addView(heading);
+
+                  TextView guide = new TextView(this);
+
+                  guide.setText(
+                          "QUEST GUIDE\n\n"
+                                  + "Start: "
+                                  + quest.start
+                                  + "\n\n"
+                                  + "Difficulty: "
+                                  + quest.difficulty
+                                  + "\n"
+                                  + "Length: "
+                                  + quest.length
+                                  + "\n"
+                                  + "Requirements: "
+                                  + quest.requirements
+                                  + "\n\n"
+                                  + "STEP 1\n"
+                                  + "Travel to the quest starting location.\n\n"
+                                  + "STEP 2\n"
+                                  + "Speak to the required NPC and begin the quest.\n\n"
+                                  + "STEP 3\n"
+                                  + "Follow the quest objectives.\n\n"
+                                  + "STEP 4\n"
+                                  + "Complete the final objective and claim your reward."
+                  );
+
+                  guide.setTextColor(Color.WHITE);
+                  guide.setTextSize(17);
+
+                  questList.addView(guide);
+
+                  Button back = new Button(this);
+                  back.setText("BACK TO QUESTS");
+
+                  back.setOnClickListener(
+                          v -> displayQuests("")
+                  );
+
+                  questList.addView(back);
+              }
+
+              private static class Quest {
+
+                  String name;
+                  String type;
+                  String difficulty;
+                  String length;
+                  String start;
+                  String requirements;
+
+                  Quest(
+                          String name,
+                          String type,
+                          String difficulty,
+                          String length,
+                          String start,
+                          String requirements) {
+
+                      this.name = name;
+                      this.type = type;
+                      this.difficulty = difficulty;
+                      this.length = length;
+                      this.start = start;
+                      this.requirements = requirements;
+                  }
+              }
+          }
+          EOF
+
+      # =====================================================
+      # GRADLE
+      # =====================================================
+
+      - name: Install Gradle 8.9
+        run: |
+          cd questmate-build
+
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+
+          unzip -q gradle-8.9-bin.zip
+
+          mv gradle-8.9 gradle
+
+          ./gradle/bin/gradle --version
+
+      # =====================================================
+      # BUILD
+      # =====================================================
+
+      - name: Build APK
+        run: |
+          cd questmate-build
+
+          ./gradle/bin/gradle clean assembleDebug \
+            --stacktrace \
+            --no-daemon
+
+      # =====================================================
+      # PREPARE APK
+      # =====================================================
+
+      - name: Prepare APK
+        run: |
+
+          set -e
+
+          echo "Searching for APK..."
+
+          find "$GITHUB_WORKSPACE/questmate-build" \
+            -type f \
+            -name "*.apk" \
+            -print
+
+          APK=$(find "$GITHUB_WORKSPACE/questmate-build" \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK found."
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/artifact"
+
+          cp "$APK" \
+             "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
+
+          echo ""
+          echo "APK READY:"
+          ls -lh "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
+
+      # =====================================================
+      # VERIFY
+     
