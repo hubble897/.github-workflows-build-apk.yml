@@ -21,7 +21,7 @@ jobs:
 
 
       # ============================================================
-      # JAVA 17
+      # JAVA
       # ============================================================
 
       - name: Set up Java 17
@@ -32,7 +32,7 @@ jobs:
 
 
       # ============================================================
-      # ANDROID SDK
+      # ANDROID
       # ============================================================
 
       - name: Set up Android SDK
@@ -41,7 +41,10 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
 
       # ============================================================
@@ -57,7 +60,7 @@ jobs:
 
 
       # ============================================================
-      # DOWNLOAD CURRENT RUNELITE QUEST LIST
+      # DOWNLOAD CURRENT OSRS QUEST LIST
       # ============================================================
 
       - name: Download OSRS quest list
@@ -68,187 +71,217 @@ jobs:
             https://raw.githubusercontent.com/runelite/runelite/master/runelite-api/src/main/java/net/runelite/api/Quest.java \
             -o build_data/Quest.java
 
-          echo "Quest list downloaded."
+          echo "Quest.java downloaded successfully."
 
-          grep -c '^[[:space:]]*[A-Z0-9_][A-Z0-9_]*[[:space:]]*(' build_data/Quest.java || true
+          echo "Checking Quest.java..."
+          head -35 build_data/Quest.java
 
 
       # ============================================================
-      # CREATE DATABASE GENERATOR
+      # CREATE QUEST DATABASE
       # ============================================================
 
-      - name: Create quest database
+      - name: Generate QuestMate quest database
         run: |
 
           mkdir -p app/src/main/assets
 
-          cat > build_data/create_database.py <<'PYTHON'
+          cat > build_data/generate_quests.py <<'PYTHON'
           import json
           import os
           import re
           import sys
 
-          source = "build_data/Quest.java"
-          output = "app/src/main/assets/quests.json"
+          SOURCE = "build_data/Quest.java"
+          OUTPUT = "app/src/main/assets/quests.json"
 
-          print("Starting QuestMate database generator...")
+          print("")
+          print("==========================================")
+          print(" QUESTMATE QUEST DATABASE GENERATOR")
+          print("==========================================")
 
-          if not os.path.exists(source):
-              print("ERROR: Quest.java was not found.")
+          if not os.path.exists(SOURCE):
+              print("ERROR: Quest.java does not exist.")
               sys.exit(1)
 
-          with open(source, "r", encoding="utf-8") as f:
+          with open(SOURCE, "r", encoding="utf-8") as f:
               text = f.read()
 
           # --------------------------------------------------------
-          # QUESTS THAT ARE NOT MAIN QUESTS
-          # --------------------------------------------------------
-
-          excluded = {
-              "ALFRED_GRIMHANDS_BARCRAWL",
-              "BARBARIAN_TRAINING",
-              "BEAR_YOUR_SOUL",
-              "CURSE_OF_THE_EMPTY_LORD",
-              "DADDYS_HOME",
-              "THE_ENCHANTED_KEY",
-              "ENTER_THE_ABYSS",
-              "FAMILY_PEST",
-              "THE_FROZEN_DOOR",
-              "THE_GENERALS_SHADOW",
-              "HIS_FAITHFUL_SERVANTS",
-              "HOPESPEARS_WILL",
-              "IN_SEARCH_OF_KNOWLEDGE",
-              "INTO_THE_TOMBS",
-              "LAIR_OF_TARN_RAZORLOR",
-              "MAGE_ARENA_I",
-              "MAGE_ARENA_II",
-              "SKIPPY_AND_THE_MOGRES",
-              "VALE_TOTEMS",
-              "RECIPE_FOR_DISASTER_ANOTHER_COOKS_QUEST",
-              "RECIPE_FOR_DISASTER_MOUNTAIN_DWARF",
-              "RECIPE_FOR_DISASTER_WARTFACE_BENTNOZE",
-              "RECIPE_FOR_DISASTER_PIRATE_PETE",
-              "RECIPE_FOR_DISASTER_LUMBRIDGE_GUIDE",
-              "RECIPE_FOR_DISASTER_EVIL_DAVE",
-              "RECIPE_FOR_DISASTER_SKRACH_UGLOGWEE",
-              "RECIPE_FOR_DISASTER_SIR_AMIK_VARZE",
-              "RECIPE_FOR_DISASTER_KING_AWOWOGEI",
-              "RECIPE_FOR_DISASTER_CULINAROMANCER"
-          }
-
-          # --------------------------------------------------------
-          # CURRENT F2P QUESTS
-          # --------------------------------------------------------
-
-          f2p = {
-              "BLACK_KNIGHTS_FORTRESS",
-              "BELOW_ICE_MOUNTAIN",
-              "COOKS_ASSISTANT",
-              "DEMON_SLAYER",
-              "DORICS_QUEST",
-              "DRAGON_SLAYER_I",
-              "ERNEST_THE_CHICKEN",
-              "GOBLIN_DIPLOMACY",
-              "THE_CORSAIR_CURSE",
-              "THE_IDES_OF_MILK",
-              "IMP_CATCHER",
-              "LEARNING_THE_ROPES",
-              "MISthALIN_MYSTERY".upper(),
-              "PIRATES_TREASURE",
-              "PRINCE_ALI_RESCUE",
-              "THE_RESTLESS_GHOST",
-              "ROMEO_AND_JULIET",
-              "RUNE_MYSTERIES",
-              "SHEEP_SHEARER",
-              "SHIELD_OF_ARRAV",
-              "THE_KNIGHTS_SWORD",
-              "VAMPYRE_SLAYER",
-              "WITCHS_POTION",
-              "X_MARKS_THE_SPOT"
-          }
-
-          # --------------------------------------------------------
-          # READ QUEST ENUMS
+          # IMPORTANT:
+          #
+          # Current RuneLite format is:
+          #
+          # QUEST_ID(number, "Quest Name")
+          #
+          # Example:
+          #
+          # ANIMAL_MAGNETISM(0, "Animal Magnetism")
+          #
           # --------------------------------------------------------
 
           pattern = re.compile(
-              r'^\s*([A-Z0-9_]+)\s*\(\s*"([^"]+)"',
+              r'^\s*([A-Z0-9_]+)\s*\(\s*'
+              r'-?\d+\s*,\s*'
+              r'"([^"]+)"',
               re.MULTILINE
           )
 
-          quests = []
-          seen = set()
+          all_quests = []
 
           for match in pattern.finditer(text):
 
-              quest_id = match.group(1).upper()
+              quest_id = match.group(1).strip()
               quest_name = match.group(2).strip()
 
-              if quest_id in excluded:
-                  continue
-
-              if quest_id in ("UNKNOWN", "NONE", "NULL"):
-                  continue
-
-              if quest_id in seen:
-                  continue
-
-              seen.add(quest_id)
-
-              quests.append({
+              all_quests.append({
                   "id": quest_id,
                   "name": quest_name
               })
 
-          print("Quest entries found:", len(quests))
+          print("")
+          print("RuneLite quest entries found:", len(all_quests))
+
+          if len(all_quests) < 180:
+              print("")
+              print("ERROR: Quest.java was parsed incorrectly.")
+              print("Expected more than 180 entries.")
+              print("Found:", len(all_quests))
+              sys.exit(1)
 
           # --------------------------------------------------------
-          # VALIDATE COUNT
+          # NON-MAIN QUESTS
+          #
+          # These are miniquests and Recipe for Disaster
+          # subquests and are NOT counted among the 182 main quests.
+          # --------------------------------------------------------
+
+          excluded_names = {
+              "Alfred Grimhand's Barcrawl",
+              "Barbarian Training",
+              "Bear Your Soul",
+              "Curse of the Empty Lord",
+              "Daddy's Home",
+              "The Enchanted Key",
+              "Enter the Abyss",
+              "Family Pest",
+              "The Frozen Door",
+              "The General's Shadow",
+              "His Faithful Servants",
+              "Hopespear's Will",
+              "In Search of Knowledge",
+              "Into the Tombs",
+              "Lair of Tarn Razorlor",
+              "Mage Arena I",
+              "Mage Arena II",
+              "Skippy and the Mogres",
+              "Vale Totems",
+
+              "Recipe for Disaster - Another Cook's Quest",
+              "Recipe for Disaster - Mountain Dwarf",
+              "Recipe for Disaster - Wartface & Bentnoze",
+              "Recipe for Disaster - Pirate Pete",
+              "Recipe for Disaster - Lumbridge Guide",
+              "Recipe for Disaster - Evil Dave",
+              "Recipe for Disaster - Skrach Uglogwee",
+              "Recipe for Disaster - Sir Amik Varze",
+              "Recipe for Disaster - King Awowogei",
+              "Recipe for Disaster - Culinaromancer"
+          }
+
+          quests = [
+              q for q in all_quests
+              if q["name"] not in excluded_names
+          ]
+
+          print("")
+          print("After exclusions:", len(quests))
+
+          # --------------------------------------------------------
+          # F2P QUESTS
+          # --------------------------------------------------------
+
+          f2p_names = {
+              "Black Knights' Fortress",
+              "Below Ice Mountain",
+              "Cook's Assistant",
+              "Demon Slayer",
+              "Doric's Quest",
+              "Dragon Slayer I",
+              "Ernest the Chicken",
+              "Goblin Diplomacy",
+              "The Corsair Curse",
+              "The Ides of Milk",
+              "Imp Catcher",
+              "Learning the Ropes",
+              "Misthalin Mystery",
+              "Pirate's Treasure",
+              "Prince Ali Rescue",
+              "The Restless Ghost",
+              "Romeo & Juliet",
+              "Rune Mysteries",
+              "Sheep Shearer",
+              "Shield of Arrav",
+              "The Knight's Sword",
+              "Vampyre Slayer",
+              "Witch's Potion",
+              "X Marks the Spot"
+          }
+
+          # --------------------------------------------------------
+          # VALIDATE TOTAL
           # --------------------------------------------------------
 
           if len(quests) != 182:
 
               print("")
-              print("ERROR: Expected exactly 182 quests.")
-              print("Found:", len(quests))
+              print("==========================================")
+              print("ERROR")
+              print("==========================================")
+              print("Expected: 182 main quests")
+              print("Found:   ", len(quests))
               print("")
+              print("All parsed quests:")
 
               for q in quests:
-                  print(q["name"])
+                  print(
+                      q["id"],
+                      "->",
+                      q["name"]
+                  )
 
               sys.exit(1)
 
           # --------------------------------------------------------
-          # CREATE DATABASE
+          # BUILD APP DATABASE
           # --------------------------------------------------------
 
           database = []
 
-          for index, quest in enumerate(quests, 1):
+          for number, quest in enumerate(quests, 1):
 
-              quest_id = quest["id"]
               name = quest["name"]
 
-              membership = (
-                  "F2P"
-                  if quest_id in f2p
-                  else "Members"
-              )
+              if name in f2p_names:
+                  membership = "F2P"
+              else:
+                  membership = "Members"
 
-              # Built-in offline walkthrough.
-              # The app does not send the user to a Wiki page.
+              # Offline built-in walkthrough.
+              # No Wiki links are used.
               steps = [
-                  "Check the requirements and gather the required items.",
+                  "Check the quest requirements before starting.",
+                  "Gather the required items and equipment.",
                   "Travel to the quest starting location.",
                   "Speak to the NPC who starts the quest.",
-                  "Follow the quest objectives and complete each required task.",
-                  "Complete the final objective of the quest.",
-                  "Return to the quest NPC and finish the quest.",
-                  "Claim your quest rewards."
+                  "Follow the quest objectives in order.",
+                  "Complete the required tasks and objectives.",
+                  "Return to the quest NPC when the objectives are complete.",
+                  "Finish the quest and claim your rewards."
               ]
 
               database.append({
-                  "id": quest_id,
+                  "id": quest["id"],
                   "name": name,
                   "membership": membership,
                   "difficulty": "OSRS Quest",
@@ -262,7 +295,7 @@ jobs:
               })
 
               print(
-                  "[" + str(index) + "/182] " + name
+                  f"[{number}/182] {name}"
               )
 
           # --------------------------------------------------------
@@ -270,11 +303,11 @@ jobs:
           # --------------------------------------------------------
 
           database.sort(
-              key=lambda q: q["name"].lower()
+              key=lambda x: x["name"].lower()
           )
 
           # --------------------------------------------------------
-          # FINAL VALIDATION
+          # FINAL COUNTS
           # --------------------------------------------------------
 
           total = len(database)
@@ -285,36 +318,36 @@ jobs:
               if q["membership"] == "F2P"
           )
 
-          member_count = sum(
+          members_count = sum(
               1
               for q in database
               if q["membership"] == "Members"
           )
 
           print("")
-          print("====================================")
-          print("QUEST DATABASE")
-          print("====================================")
-          print("Total quests:", total)
-          print("F2P quests:", f2p_count)
-          print("Members quests:", member_count)
-          print("====================================")
+          print("==========================================")
+          print("FINAL QUEST DATABASE")
+          print("==========================================")
+          print("Total:", total)
+          print("F2P:", f2p_count)
+          print("Members:", members_count)
+          print("==========================================")
 
           if total != 182:
-              sys.exit("ERROR: Quest total is not 182.")
+              sys.exit("ERROR: Total quests must equal 182.")
 
           if f2p_count != 24:
-              sys.exit("ERROR: F2P total is not 24.")
+              sys.exit("ERROR: F2P quests must equal 24.")
 
-          if member_count != 158:
-              sys.exit("ERROR: Members total is not 158.")
+          if members_count != 158:
+              sys.exit("ERROR: Members quests must equal 158.")
 
           # --------------------------------------------------------
-          # WRITE FILE
+          # WRITE JSON
           # --------------------------------------------------------
 
           with open(
-              output,
+              OUTPUT,
               "w",
               encoding="utf-8"
           ) as f:
@@ -327,33 +360,36 @@ jobs:
               )
 
           print("")
-          print("Quest database successfully created.")
-          print(output)
+          print("Quest database created successfully.")
+          print("Output:", OUTPUT)
           print(
-              "File size:",
-              os.path.getsize(output),
+              "Size:",
+              os.path.getsize(OUTPUT),
               "bytes"
           )
 
           PYTHON
 
-          echo "Checking Python generator..."
+          echo "Checking generator..."
 
           python3 -m py_compile \
-            build_data/create_database.py
+            build_data/generate_quests.py
 
-          echo "Python generator is valid."
-
-          python3 \
-            build_data/create_database.py
+          echo "Generator syntax OK."
 
           echo ""
-          echo "Database file:"
+          echo "Running generator..."
+
+          python3 \
+            build_data/generate_quests.py
+
+          echo ""
+          echo "QUEST DATABASE CREATED:"
           ls -lh app/src/main/assets/quests.json
 
 
       # ============================================================
-      # ANDROID PROJECT
+      # CREATE ANDROID PROJECT
       # ============================================================
 
       - name: Create Android project
@@ -372,7 +408,9 @@ jobs:
           }
 
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositoriesMode.set(
+                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
+              )
 
               repositories {
                   google()
@@ -406,15 +444,21 @@ jobs:
           }
 
           android {
+
               namespace "com.questmate.app"
 
               compileSdk 35
 
               defaultConfig {
+
                   applicationId "com.questmate.app"
+
                   minSdk 23
+
                   targetSdk 35
+
                   versionCode 1
+
                   versionName "1.0"
               }
           }
@@ -436,9 +480,18 @@ jobs:
                   parent="android:style/Theme.Material.Light.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#4CAF50</item>
-                  <item name="android:statusBarColor">#111111</item>
-                  <item name="android:navigationBarColor">#000000</item>
+
+                  <item name="android:colorAccent">
+                      #4CAF50
+                  </item>
+
+                  <item name="android:statusBarColor">
+                      #111111
+                  </item>
+
+                  <item name="android:navigationBarColor">
+                      #000000
+                  </item>
 
               </style>
 
@@ -752,6 +805,7 @@ jobs:
 
                           if (!searchMatch ||
                               !filterMatch) {
+
                               continue;
                           }
 
@@ -870,6 +924,57 @@ jobs:
                   return view;
               }
 
+              private void addText(
+                  String text
+              ) {
+
+                  TextView view =
+                      new TextView(this);
+
+                  view.setText(text);
+
+                  view.setTextSize(15);
+
+                  view.setPadding(
+                      0,
+                      4,
+                      0,
+                      4
+                  );
+
+                  content.addView(view);
+              }
+
+              private void addArray(
+                  String title,
+                  JSONArray array
+              ) {
+
+                  if (array == null ||
+                      array.length() == 0) {
+
+                      return;
+                  }
+
+                  content.addView(
+                      heading(title, 20)
+                  );
+
+                  for (int i = 0;
+                       i < array.length();
+                       i++) {
+
+                      try {
+
+                          addText(
+                              "• "
+                              + array.getString(i)
+                          );
+
+                      } catch (Exception ignored) {}
+                  }
+              }
+
               private void buildScreen() {
 
                   LinearLayout root =
@@ -900,27 +1005,22 @@ jobs:
 
                   try {
 
-                      TextView questTitle =
+                      TextView title =
                           heading(
                               quest.getString("name"),
                               28
                           );
 
-                      questTitle.setTypeface(
+                      title.setTypeface(
                           Typeface.DEFAULT,
                           Typeface.BOLD
                       );
 
-                      content.addView(
-                          questTitle
-                      );
+                      content.addView(title);
 
-                      content.addView(
-                          heading(
-                              quest.getString(
-                                  "membership"
-                              ),
-                              16
+                      addText(
+                          quest.getString(
+                              "membership"
                           )
                       );
 
@@ -987,11 +1087,8 @@ jobs:
                           )
                       );
 
-                      content.addView(
-                          heading(
-                              "Tick each step when completed.",
-                              15
-                          )
+                      addText(
+                          "Tick each step as you complete it."
                       );
 
                       JSONArray steps =
@@ -1006,13 +1103,13 @@ jobs:
                            i < steps.length();
                            i++) {
 
-                          CheckBox check =
-                              new CheckBox(this);
-
-                          String key =
+                          final String key =
                               questId
                               + "_step_"
                               + i;
+
+                          CheckBox check =
+                              new CheckBox(this);
 
                           check.setText(
                               (i + 1)
@@ -1057,90 +1154,38 @@ jobs:
 
                   setContentView(root);
               }
-
-              private void addText(
-                  String text
-              ) {
-
-                  TextView view =
-                      new TextView(this);
-
-                  view.setText(text);
-
-                  view.setTextSize(15);
-
-                  view.setPadding(
-                      0,
-                      4,
-                      0,
-                      4
-                  );
-
-                  content.addView(view);
-              }
-
-              private void addArray(
-                  String heading,
-                  JSONArray array
-              ) {
-
-                  if (array == null ||
-                      array.length() == 0) {
-
-                      return;
-                  }
-
-                  content.addView(
-                      this.heading(
-                          heading,
-                          20
-                      )
-                  );
-
-                  for (int i = 0;
-                       i < array.length();
-                       i++) {
-
-                      try {
-
-                          addText(
-                              "• "
-                              + array.getString(i)
-                          );
-
-                      } catch (Exception ignored) {}
-                  }
-              }
           }
           EOF
 
 
       # ============================================================
-      # BUILD APK
+      # BUILD
       # ============================================================
 
       - name: Build QuestMate APK
         run: |
 
-          echo "======================================"
-          echo "BUILDING QUESTMATE"
-          echo "======================================"
+          echo ""
+          echo "=========================================="
+          echo "BUILDING QUESTMATE APK"
+          echo "=========================================="
 
           gradle clean assembleDebug \
             --no-daemon \
             --stacktrace
 
           echo ""
-          echo "Gradle build completed."
+          echo "BUILD COMPLETED."
 
 
       # ============================================================
-      # FIND APK
+      # VERIFY APK
       # ============================================================
 
-      - name: Find and prepare APK
+      - name: Verify APK
         run: |
 
+          echo ""
           echo "Searching for APK..."
 
           find . \
@@ -1157,16 +1202,13 @@ jobs:
           if [ -z "$APK" ]; then
 
               echo ""
-              echo "ERROR: APK was not created."
-              echo ""
-
-              find . -type f | head -200
-
+              echo "ERROR: No APK was produced."
               exit 1
+
           fi
 
           echo ""
-          echo "APK found:"
+          echo "APK FOUND:"
           echo "$APK"
 
           mkdir -p dist
@@ -1175,7 +1217,7 @@ jobs:
             dist/QuestMate.apk
 
           echo ""
-          echo "Prepared APK:"
+          echo "FINAL APK:"
           ls -lh dist/QuestMate.apk
 
           echo ""
@@ -1184,7 +1226,7 @@ jobs:
 
 
       # ============================================================
-      # UPLOAD APK
+      # UPLOAD ARTIFACT
       # ============================================================
 
       - name: Upload QuestMate APK
@@ -1199,31 +1241,31 @@ jobs:
 
 
       # ============================================================
-      # CONFIRM UPLOAD
+      # CONFIRM ARTIFACT
       # ============================================================
 
-      - name: Confirm Artifact
+      - name: Confirm Artifact Upload
         run: |
 
           echo ""
           echo "=========================================="
-          echo "       QUESTMATE BUILD SUCCESSFUL"
+          echo "      QUESTMATE BUILD SUCCESSFUL"
           echo "=========================================="
 
           echo ""
-          echo "APK FILE:"
+          echo "APK:"
           ls -lh dist/QuestMate.apk
 
           echo ""
-          echo "ARTIFACT ID:"
+          echo "Artifact ID:"
           echo "${{ steps.upload.outputs.artifact-id }}"
 
           echo ""
-          echo "ARTIFACT URL:"
+          echo "Artifact URL:"
           echo "${{ steps.upload.outputs.artifact-url }}"
 
           echo ""
-          echo "ARTIFACT DIGEST:"
+          echo "Artifact SHA256:"
           echo "${{ steps.upload.outputs.artifact-digest }}"
 
           echo ""
