@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   build:
@@ -16,547 +17,172 @@ jobs:
 
     steps:
 
+      # 1. Download the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
+      # 2. Install Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-
+      # 3. Set up Android
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-
-      - name: Install Android SDK
+      # 4. Install Android SDK components
+      - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-
-      - name: Create QuestMate project
-        shell: bash
+      # 5. Extract the QuestMate project
+      - name: Extract QuestMate project
         run: |
+          rm -rf project
+          mkdir -p project
+          unzip -o QuestMate-Android-Prototype.zip -d project
 
-          set -e
-
-          rm -rf questmate-build
-          rm -rf artifact
-
-          mkdir -p questmate-build/app/src/main/java/com/questmate/app
-          mkdir -p questmate-build/app/src/main/res/values
-          mkdir -p questmate-build/app/src/main/assets
-
-          mkdir -p artifact
-
-
-      - name: Create settings.gradle
+      # 6. Locate the Android project
+      - name: Locate Android project
         run: |
-          cat > questmate-build/settings.gradle <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
+          echo "Looking for Gradle project..."
 
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+          SETTINGS_FILE=$(find "$GITHUB_WORKSPACE/project" \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            | head -n 1)
 
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: No settings.gradle or settings.gradle.kts found."
+            echo ""
+            echo "Files found:"
+            find "$GITHUB_WORKSPACE/project" -maxdepth 6 -type f | sort
+            exit 1
+          fi
 
-          rootProject.name = "QuestMate"
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-          include(":app")
-          EOF
+          echo "Android project found at:"
+          echo "$PROJECT_DIR"
 
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Create root build.gradle
+      # 7. Configure Gradle properties
+      - name: Configure Gradle properties
         run: |
-          cat > questmate-build/build.gradle <<'EOF'
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+          cd "$PROJECT_DIR"
 
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.7.3'
-              }
-          }
-
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-
-
-      - name: Create gradle.properties
-        run: |
-          cat > questmate-build/gradle.properties <<'EOF'
+          cat > gradle.properties <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-
-      - name: Create app build.gradle
+      # 8. Install Gradle 8.9
+      - name: Install Gradle 8.9
         run: |
-          cat > questmate-build/app/build.gradle <<'EOF'
-          apply plugin: 'com.android.application'
+          cd "$PROJECT_DIR"
 
-          android {
-              namespace 'com.questmate.app'
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
 
-              compileSdk 35
+          unzip -q gradle-8.9-bin.zip
 
-              defaultConfig {
-                  applicationId 'com.questmate.app'
-                  minSdk 23
-                  targetSdk 35
-                  versionCode 1
-                  versionName '1.0'
-              }
+          rm -rf gradle
 
-              buildTypes {
-                  debug {
-                      minifyEnabled false
-                  }
+          mv gradle-8.9 gradle
 
-                  release {
-                      minifyEnabled false
-                  }
-              }
-          }
-          EOF
+          echo "Gradle version:"
+          ./gradle/bin/gradle --version
 
-
-      - name: Create AndroidManifest.xml
+      # 9. Build the APK
+      - name: Build QuestMate APK
         run: |
-          cat > questmate-build/app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
+          cd "$PROJECT_DIR"
 
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          ./gradle/bin/gradle clean assembleDebug \
+            --stacktrace \
+            --no-daemon
 
-              <application
-                  android:allowBackup="true"
-                  android:label="QuestMate"
-                  android:resizeableActivity="true"
-                  android:supportsRtl="true"
-                  android:theme="@style/AppTheme">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-
-                      <intent-filter>
-
-                          <action
-                              android:name="android.intent.action.MAIN" />
-
-                          <category
-                              android:name="android.intent.category.LAUNCHER" />
-
-                      </intent-filter>
-
-                  </activity>
-
-              </application>
-
-          </manifest>
-          EOF
-
-
-      - name: Create theme
+      # 10. Find the generated APK
+      - name: Find APK
         run: |
-          cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
+          echo "Searching for generated APK..."
 
-          <resources>
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -path "*/build/outputs/apk/*" \
+            | head -n 1)
 
-              <style
-                  name="AppTheme"
-                  parent="@android:style/Theme.Material.NoActionBar">
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            echo ""
+            echo "Searching entire project:"
+            find "$PROJECT_DIR" -type f -name "*.apk" -print || true
+            echo ""
+            echo "Build output directories:"
+            find "$PROJECT_DIR" -type d -name "outputs" -print || true
+            exit 1
+          fi
 
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#00C853</item>
-                  <item name="android:statusBarColor">#101010</item>
-                  <item name="android:navigationBarColor">#101010</item>
+          echo "APK FOUND:"
+          echo "$APK"
 
-              </style>
+          mkdir -p "$GITHUB_WORKSPACE/artifact"
 
-          </resources>
-          EOF
+          cp "$APK" "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
 
+          echo ""
+          echo "Copied APK:"
+          ls -lh "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
 
-      - name: Create quest data
+      # 11. Verify the APK
+      - name: Verify APK
         run: |
-          cat > questmate-build/app/src/main/assets/quests.json <<'EOF'
-          [
-            {
-              "name": "Cook's Assistant",
-              "members": false,
-              "difficulty": "Novice",
-              "length": "Short",
-              "questPoints": 1,
-              "start": "Cook in Lumbridge Castle",
-              "guide": [
-                "Speak to the Cook in Lumbridge Castle.",
-                "Find a bucket of milk.",
-                "Find an egg.",
-                "Find some flour.",
-                "Return the ingredients to the Cook.",
-                "Complete the quest."
-              ]
-            },
-            {
-              "name": "Doric's Quest",
-              "members": false,
-              "difficulty": "Novice",
-              "length": "Short",
-              "questPoints": 1,
-              "start": "Doric north of Falador",
-              "guide": [
-                "Speak to Doric.",
-                "Collect the required ores.",
-                "Return the ores to Doric.",
-                "Complete the quest."
-              ]
-            },
-            {
-              "name": "The Restless Ghost",
-              "members": false,
-              "difficulty": "Novice",
-              "length": "Short",
-              "questPoints": 1,
-              "start": "Father Aereck in Lumbridge Church",
-              "guide": [
-                "Speak to Father Aereck.",
-                "Speak to Father Urhney.",
-                "Investigate the ghost's location.",
-                "Find the skull.",
-                "Return the skull.",
-                "Complete the quest."
-              ]
-            },
-            {
-              "name": "Romeo & Juliet",
-              "members": false,
-              "difficulty": "Novice",
-              "length": "Medium",
-              "questPoints": 5,
-              "start": "Romeo in Varrock",
-              "guide": [
-                "Speak to Romeo.",
-                "Speak to Juliet.",
-                "Investigate the situation.",
-                "Collect the required items.",
-                "Follow the QuestMate instructions.",
-                "Complete the quest."
-              ]
-            },
-            {
-              "name": "Vampire Slayer",
-              "members": false,
-              "difficulty": "Novice",
-              "length": "Short",
-              "questPoints": 3,
-              "start": "Morgan in Draynor Village",
-              "guide": [
-                "Speak to Morgan.",
-                "Prepare for the vampire fight.",
-                "Travel to the vampire's location.",
-                "Defeat the vampire.",
-                "Return to Morgan.",
-                "Complete the quest."
-              ]
-            }
-          ]
-          EOF
+          APK="$GITHUB_WORKSPACE/artifact/QuestMate.apk"
 
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: QuestMate.apk does not exist."
+            exit 1
+          fi
 
-      - name: Create MainActivity
+          FILE_SIZE=$(stat -c%s "$APK")
+
+          echo "APK size: $FILE_SIZE bytes"
+
+          if [ "$FILE_SIZE" -lt 10000 ]; then
+            echo "ERROR: APK is unexpectedly small."
+            exit 1
+          fi
+
+          echo ""
+          echo "APK verification successful."
+          file "$APK"
+
+      # 12. Upload APK as GitHub Actions artifact
+      - name: Upload QuestMate APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-APK
+          path: ${{ github.workspace }}/artifact/QuestMate.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # 13. Final confirmation
+      - name: Confirm APK
         run: |
-          cat > questmate-build/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.graphics.Color;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.CheckBox;
-          import android.widget.EditText;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-
-          import org.json.JSONArray;
-          import org.json.JSONObject;
-
-          import java.io.BufferedReader;
-          import java.io.InputStreamReader;
-          import java.util.ArrayList;
-          import java.util.List;
-
-          public class MainActivity extends Activity {
-
-              private LinearLayout questList;
-
-              private final List<Quest> quests =
-                      new ArrayList<>();
-
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-
-                  super.onCreate(savedInstanceState);
-
-                  loadQuests();
-
-                  showHome();
-              }
-
-
-              private void showHome() {
-
-                  LinearLayout root =
-                          new LinearLayout(this);
-
-                  root.setOrientation(
-                          LinearLayout.VERTICAL
-                  );
-
-                  root.setPadding(
-                          16, 16, 16, 16
-                  );
-
-                  root.setBackgroundColor(
-                          Color.rgb(18,18,18)
-                  );
-
-
-                  LinearLayout header =
-                          new LinearLayout(this);
-
-                  header.setGravity(
-                          Gravity.CENTER_VERTICAL
-                  );
-
-
-                  TextView title =
-                          new TextView(this);
-
-                  title.setText(
-                          "QUESTMATE"
-                  );
-
-                  title.setTextColor(
-                          Color.WHITE
-                  );
-
-                  title.setTextSize(
-                          26
-                  );
-
-
-                  header.addView(
-                          title,
-                          new LinearLayout.LayoutParams(
-                                  0,
-                                  70,
-                                  1
-                          )
-                  );
-
-
-                  Button minimize =
-                          new Button(this);
-
-                  minimize.setText(
-                          "MINIMIZE"
-                  );
-
-                  minimize.setOnClickListener(
-                          v -> moveTaskToBack(true)
-                  );
-
-
-                  header.addView(
-                          minimize
-                  );
-
-                  root.addView(header);
-
-
-                  TextView subtitle =
-                          new TextView(this);
-
-                  subtitle.setText(
-                          "OSRS Quest Guide"
-                  );
-
-                  subtitle.setTextColor(
-                          Color.LTGRAY
-                  );
-
-                  root.addView(subtitle);
-
-
-                  EditText search =
-                          new EditText(this);
-
-                  search.setHint(
-                          "Search quests..."
-                  );
-
-                  search.setTextColor(
-                          Color.WHITE
-                  );
-
-                  search.setHintTextColor(
-                          Color.GRAY
-                  );
-
-                  root.addView(search);
-
-
-                  ScrollView scroll =
-                          new ScrollView(this);
-
-
-                  questList =
-                          new LinearLayout(this);
-
-                  questList.setOrientation(
-                          LinearLayout.VERTICAL
-                  );
-
-
-                  scroll.addView(questList);
-
-
-                  root.addView(
-                          scroll,
-                          new LinearLayout.LayoutParams(
-                                  -1,
-                                  0,
-                                  1
-                          )
-                  );
-
-
-                  search.addTextChangedListener(
-                          new android.text.TextWatcher() {
-
-                              public void beforeTextChanged(
-                                      CharSequence s,
-                                      int start,
-                                      int count,
-                                      int after) {
-                              }
-
-                              public void onTextChanged(
-                                      CharSequence s,
-                                      int start,
-                                      int before,
-                                      int count) {
-
-                                  refresh(
-                                          s.toString()
-                                  );
-                              }
-
-                              public void afterTextChanged(
-                                      android.text.Editable e) {
-                              }
-                          }
-                  );
-
-
-                  setContentView(root);
-
-                  refresh("");
-              }
-
-
-              private void refresh(String text) {
-
-                  questList.removeAllViews();
-
-                  String search =
-                          text.toLowerCase().trim();
-
-
-                  for (Quest quest : quests) {
-
-                      if (
-                          !search.isEmpty()
-                          &&
-                          !quest.name
-                              .toLowerCase()
-                              .contains(search)
-                      ) {
-                          continue;
-                      }
-
-
-                      Button button =
-                              new Button(this);
-
-                      button.setText(
-                              quest.name
-                              + "\n"
-                              +
-                              (
-                                  quest.members
-                                  ? "MEMBERS"
-                                  : "F2P"
-                              )
-                      );
-
-
-                      button.setOnClickListener(
-                              v -> showQuest(quest)
-                      );
-
-
-                      questList.addView(
-                              button,
-                              new LinearLayout.LayoutParams(
-                                      -1,
-                                      85
-                              )
-                      );
-                  }
-              }
-
-
-              private void showQuest(Quest quest) {
-
-                  LinearLayout root =
-                          new LinearLayout(this);
-
-                  root.setOrientation(
-                          LinearLayout.VERTICAL
-                  );
-
-                  root.setPadding(
-                          16,16,16,16
-                  );
-
-                  root.setBackgroundColor(
-                          Color.rgb
+          echo ""
+          echo "=========================================="
+          echo "       QUESTMATE BUILD SUCCESSFUL"
+          echo "=========================================="
+          echo ""
+          echo "APK:"
+          ls -lh "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
+          echo ""
+          echo "The QuestMate-APK artifact should now"
+          echo "appear at the bottom of this GitHub Actions run."
