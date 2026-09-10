@@ -1,4 +1,4 @@
-name: Build QuestMate 4 - OSRS Quest Overlay
+name: Build QuestMate 5 - OSRS Quest Overlay
 
 on:
   workflow_dispatch:
@@ -61,7 +61,7 @@ jobs:
           include(":app")
           EOF
 
-      - name: Create root Gradle build
+      - name: Create root build.gradle
         run: |
           cat > questmate-build/build.gradle <<'EOF'
           plugins {
@@ -69,7 +69,7 @@ jobs:
           }
           EOF
 
-      - name: Create Gradle properties
+      - name: Create gradle.properties
         run: |
           cat > questmate-build/gradle.properties <<'EOF'
           android.useAndroidX=true
@@ -77,7 +77,7 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-      - name: Create app Gradle build
+      - name: Create app build.gradle
         run: |
           cat > questmate-build/app/build.gradle <<'EOF'
           plugins {
@@ -92,8 +92,13 @@ jobs:
                   applicationId 'com.questmate.app'
                   minSdk 23
                   targetSdk 35
-                  versionCode 4
-                  versionName '4.0'
+                  versionCode 5
+                  versionName '5.0'
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
               }
           }
           EOF
@@ -118,6 +123,7 @@ jobs:
 
           cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
+
               <style name="AppTheme"
                   parent="android:style/Theme.Material.Light.NoActionBar">
 
@@ -125,24 +131,19 @@ jobs:
                   <item name="android:colorAccent">
                       @color/questmate_accent
                   </item>
-
                   <item name="android:navigationBarColor">
                       @color/questmate_bg
                   </item>
-
                   <item name="android:statusBarColor">
                       @color/questmate_bg
                   </item>
 
-                  <item name="android:windowLightStatusBar">
-                      false
-                  </item>
-
               </style>
+
           </resources>
           EOF
 
-      - name: Create Android Manifest
+      - name: Create AndroidManifest.xml
         run: |
           cat > questmate-build/app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -183,7 +184,7 @@ jobs:
 
                       <property
                           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                          android:value="QuestMate floating OSRS quest walkthrough overlay started by the user." />
+                          android:value="QuestMate floating quest companion overlay" />
 
                   </service>
 
@@ -192,7 +193,7 @@ jobs:
           </manifest>
           EOF
 
-      - name: Create Quest Database
+      - name: Create quest database
         run: |
           cat > questmate-build/app/src/main/assets/quests.json <<'EOF'
           [
@@ -203,10 +204,10 @@ jobs:
               "length": "Short",
               "questPoints": 1,
               "steps": [
-                "Speak with the cook in Lumbridge Castle to begin.",
+                "Speak with the cook in Lumbridge Castle.",
                 "Collect the ingredients requested by the cook.",
-                "Return all required ingredients to the cook.",
-                "Finish the conversation and receive your reward."
+                "Return the ingredients to the cook.",
+                "Finish the conversation and collect your reward."
               ]
             },
             {
@@ -218,8 +219,8 @@ jobs:
               "steps": [
                 "Speak with Father Aereck in Lumbridge.",
                 "Investigate the ghost's problem.",
-                "Obtain what you need to communicate with the ghost.",
-                "Return to the ghost and resolve its problem.",
+                "Obtain the equipment needed to communicate with the ghost.",
+                "Speak with the ghost and resolve its problem.",
                 "Return to Father Aereck and claim your reward."
               ]
             },
@@ -231,48 +232,59 @@ jobs:
               "questPoints": 5,
               "steps": [
                 "Speak with Romeo in Varrock.",
-                "Find Juliet and learn what has happened.",
-                "Carry out the tasks required to help the couple.",
-                "Follow the plan for their escape.",
-                "Return to Romeo and complete the final conversation."
+                "Find Juliet and discover what has happened.",
+                "Complete the tasks needed to help Juliet.",
+                "Follow the plan to help the couple.",
+                "Return to Romeo and finish the quest."
               ]
             }
           ]
           EOF
 
-      - name: Create MainActivity
+      - name: Create MainActivity.java
         run: |
           cat > questmate-build/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
           package com.questmate.app;
 
           import android.app.Activity;
           import android.content.Intent;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
           import android.net.Uri;
           import android.os.Bundle;
           import android.provider.Settings;
-          import android.graphics.Color;
-          import android.graphics.Typeface;
-          import android.widget.*;
+          import android.text.Editable;
+          import android.text.TextWatcher;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.CheckBox;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+
           import java.io.InputStream;
           import java.nio.charset.StandardCharsets;
           import java.util.ArrayList;
           import java.util.List;
-          import org.json.JSONArray;
-          import org.json.JSONObject;
 
           public class MainActivity extends Activity {
 
-              LinearLayout root;
-              List<Quest> quests = new ArrayList<>();
-              Quest selected;
+              private LinearLayout root;
+              private final List<Quest> quests = new ArrayList<>();
+              private Quest selectedQuest;
 
-              static class Quest {
-                  String name;
-                  String difficulty;
-                  String length;
+              private static class Quest {
+                  String name = "";
                   boolean members;
+                  String difficulty = "";
+                  String length = "";
                   int questPoints;
-                  ArrayList<String> steps = new ArrayList<>();
+                  List<String> steps = new ArrayList<>();
               }
 
               @Override
@@ -283,910 +295,352 @@ jobs:
                   showHome();
               }
 
-              TextView makeText(String value, int size) {
-                  TextView text = new TextView(this);
+              private TextView text(String value, int size) {
+                  TextView view = new TextView(this);
 
-                  text.setText(value);
-                  text.setTextSize(size);
-                  text.setTextColor(Color.WHITE);
-                  text.setPadding(24, 18, 24, 18);
+                  view.setText(value);
+                  view.setTextSize(size);
+                  view.setTextColor(Color.WHITE);
+                  view.setPadding(20, 14, 20, 14);
 
-                  return text;
+                  return view;
               }
 
-              Button makeButton(String value) {
+              private Button button(String value) {
                   Button button = new Button(this);
 
                   button.setText(value);
-                  button.setTextColor(Color.WHITE);
                   button.setAllCaps(false);
+                  button.setTextColor(Color.WHITE);
 
                   return button;
               }
 
-              void createBase() {
+              private void baseScreen() {
                   ScrollView scroll = new ScrollView(this);
 
                   root = new LinearLayout(this);
-                  root.setOrientation(
-                          LinearLayout.VERTICAL
-                  );
-
-                  root.setPadding(
-                          18,
-                          18,
-                          18,
-                          18
-                  );
-
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(16, 16, 16, 16);
                   root.setBackgroundColor(
-                          Color.rgb(16, 20, 28)
+                      Color.rgb(16, 20, 28)
                   );
 
                   scroll.addView(root);
-
                   setContentView(scroll);
               }
 
-              void showHome() {
-                  createBase();
+              private void showHome() {
+                  baseScreen();
 
-                  TextView title =
-                          makeText("QUESTMATE", 30);
+                  TextView title = text(
+                      "QUESTMATE",
+                      30
+                  );
 
                   title.setTypeface(
-                          Typeface.DEFAULT_BOLD
+                      Typeface.DEFAULT_BOLD
                   );
 
                   root.addView(title);
 
                   root.addView(
-                          makeText(
-                                  "OSRS Quest Companion",
-                                  17
-                          )
+                      text(
+                          "OSRS Quest Companion",
+                          17
+                      )
                   );
 
-                  Button overlay =
-                          makeButton("START OVERLAY");
+                  Button overlayButton =
+                      button("START OVERLAY");
 
-                  overlay.setOnClickListener(
-                          v -> startOverlay()
+                  overlayButton.setOnClickListener(
+                      v -> startOverlay()
                   );
 
-                  root.addView(overlay);
+                  root.addView(overlayButton);
 
-                  EditText search =
-                          new EditText(this);
+                  EditText search = new EditText(this);
 
-                  search.setHint("Search quests");
-                  search.setTextColor(Color.WHITE);
+                  search.setHint("Search quests...");
                   search.setHintTextColor(Color.LTGRAY);
+                  search.setTextColor(Color.WHITE);
 
                   root.addView(search);
 
-                  LinearLayout list =
-                          new LinearLayout(this);
+                  LinearLayout questList =
+                      new LinearLayout(this);
 
-                  list.setOrientation(
-                          LinearLayout.VERTICAL
+                  questList.setOrientation(
+                      LinearLayout.VERTICAL
                   );
 
-                  root.addView(list);
+                  root.addView(questList);
 
                   Runnable refresh = () -> {
 
-                      list.removeAllViews();
+                      questList.removeAllViews();
 
                       String query =
-                              search.getText()
-                                      .toString()
-                                      .toLowerCase();
+                          search.getText()
+                              .toString()
+                              .toLowerCase();
 
                       for (Quest quest : quests) {
 
                           if (!quest.name
-                                  .toLowerCase()
-                                  .contains(query)) {
+                              .toLowerCase()
+                              .contains(query)) {
                               continue;
                           }
 
-                          Button item =
-                                  makeButton(
-                                          quest.name +
-                                          (quest.members
-                                              ? " • Members"
-                                              : " • F2P")
-                                  );
+                          Button questButton =
+                              button(
+                                  quest.name
+                                  + (quest.members
+                                      ? " • Members"
+                                      : " • F2P")
+                              );
 
-                          item.setOnClickListener(
-                                  v -> showQuest(quest)
+                          questButton.setOnClickListener(
+                              v -> showQuest(quest)
                           );
 
-                          list.addView(item);
+                          questList.addView(
+                              questButton
+                          );
                       }
                   };
 
                   search.addTextChangedListener(
-                          new android.text.TextWatcher() {
+                      new TextWatcher() {
 
-                              public void beforeTextChanged(
-                                      CharSequence s,
-                                      int start,
-                                      int count,
-                                      int after) {
-                              }
-
-                              public void onTextChanged(
-                                      CharSequence s,
-                                      int start,
-                                      int before,
-                                      int count) {
-                                  refresh.run();
-                              }
-
-                              public void afterTextChanged(
-                                      android.text.Editable e) {
-                              }
+                          @Override
+                          public void beforeTextChanged(
+                              CharSequence s,
+                              int start,
+                              int count,
+                              int after) {
                           }
+
+                          @Override
+                          public void onTextChanged(
+                              CharSequence s,
+                              int start,
+                              int before,
+                              int count) {
+                              refresh.run();
+                          }
+
+                          @Override
+                          public void afterTextChanged(
+                              Editable s) {
+                          }
+                      }
                   );
 
                   refresh.run();
               }
 
-              void showQuest(Quest quest) {
+              private void showQuest(Quest quest) {
 
-                  selected = quest;
+                  selectedQuest = quest;
 
-                  createBase();
+                  baseScreen();
 
                   Button back =
-                          makeButton("← QUESTS");
+                      button("← BACK TO QUESTS");
 
                   back.setOnClickListener(
-                          v -> showHome()
+                      v -> showHome()
                   );
 
                   root.addView(back);
 
                   TextView title =
-                          makeText(
-                                  quest.name,
-                                  28
-                          );
+                      text(quest.name, 28);
 
                   title.setTypeface(
-                          Typeface.DEFAULT_BOLD
+                      Typeface.DEFAULT_BOLD
                   );
 
                   root.addView(title);
 
                   root.addView(
-                          makeText(
-                                  (quest.members
-                                      ? "Members"
-                                      : "Free-to-play")
-                                  + " • "
-                                  + quest.difficulty
-                                  + " • "
-                                  + quest.length
-                                  + " • "
-                                  + quest.questPoints
-                                  + " Quest Points",
-                                  16
-                          )
+                      text(
+                          (quest.members
+                              ? "Members"
+                              : "Free-to-play")
+                          + " • "
+                          + quest.difficulty
+                          + " • "
+                          + quest.length
+                          + " • "
+                          + quest.questPoints
+                          + " Quest Points",
+                          16
+                      )
                   );
 
                   root.addView(
-                          makeText(
-                                  "FULL WALKTHROUGH",
-                                  22
-                          )
+                      text(
+                          "FULL WALKTHROUGH",
+                          22
+                      )
                   );
 
                   for (int i = 0;
                        i < quest.steps.size();
                        i++) {
 
-                      CheckBox checkBox =
-                              new CheckBox(this);
+                      CheckBox check =
+                          new CheckBox(this);
 
-                      checkBox.setText(
-                              (i + 1)
-                              + ". "
-                              + quest.steps.get(i)
+                      check.setText(
+                          (i + 1)
+                          + ". "
+                          + quest.steps.get(i)
                       );
 
-                      checkBox.setTextColor(
-                              Color.WHITE
+                      check.setTextColor(
+                          Color.WHITE
                       );
 
-                      checkBox.setTextSize(16);
+                      check.setTextSize(16);
 
                       String key =
-                              "quest_"
-                              + quest.name.replaceAll(
-                                      "[^A-Za-z0-9]",
-                                      "_")
-                              + "_step_"
-                              + i;
+                          "quest_"
+                          + quest.name.replaceAll(
+                              "[^A-Za-z0-9]",
+                              "_"
+                          )
+                          + "_step_"
+                          + i;
 
-                      checkBox.setChecked(
+                      check.setChecked(
+                          getPreferences(0)
+                              .getBoolean(
+                                  key,
+                                  false
+                              )
+                      );
+
+                      check.setOnCheckedChangeListener(
+                          (buttonView, checked) ->
                               getPreferences(0)
-                                  .getBoolean(
+                                  .edit()
+                                  .putBoolean(
                                       key,
-                                      false
+                                      checked
                                   )
+                                  .apply()
                       );
 
-                      checkBox.setOnCheckedChangeListener(
-                              (button, checked) ->
-                                  getPreferences(0)
-                                      .edit()
-                                      .putBoolean(
-                                          key,
-                                          checked
-                                      )
-                                      .apply()
-                      );
-
-                      root.addView(checkBox);
+                      root.addView(check);
                   }
 
-                  Button complete =
-                          makeButton(
-                                  "MARK QUEST COMPLETE"
-                          );
+                  Button startOverlay =
+                      button(
+                          "START OVERLAY WITH THIS QUEST"
+                      );
 
-                  complete.setOnClickListener(
-                          v -> Toast.makeText(
-                                  this,
-                                  "Quest completed!",
-                                  Toast.LENGTH_SHORT
-                          ).show()
+                  startOverlay.setOnClickListener(
+                      v -> startOverlay()
                   );
 
-                  root.addView(complete);
-
-                  Button start =
-                          makeButton(
-                                  "START OVERLAY WITH THIS QUEST"
-                          );
-
-                  start.setOnClickListener(
-                          v -> startOverlay()
-                  );
-
-                  root.addView(start);
+                  root.addView(startOverlay);
               }
 
-              void startOverlay() {
+              private void startOverlay() {
 
                   if (!Settings.canDrawOverlays(this)) {
 
-                      Intent settings =
-                              new Intent(
-                                  Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                  Uri.parse(
-                                      "package:"
-                                      + getPackageName()
-                                  )
-                              );
+                      Intent settingsIntent =
+                          new Intent(
+                              Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                              Uri.parse(
+                                  "package:"
+                                  + getPackageName()
+                              )
+                          );
 
-                      startActivity(settings);
+                      startActivity(settingsIntent);
 
                       Toast.makeText(
-                              this,
-                              "Allow QuestMate to display over other apps, then return to QuestMate and press START OVERLAY again.",
-                              Toast.LENGTH_LONG
+                          this,
+                          "Allow QuestMate to display over other apps, then return to QuestMate.",
+                          Toast.LENGTH_LONG
                       ).show();
 
                       return;
                   }
 
                   Intent service =
-                          new Intent(
-                              this,
-                              OverlayService.class
-                          );
+                      new Intent(
+                          this,
+                          OverlayService.class
+                      );
 
-                  service.putExtra(
+                  if (selectedQuest != null) {
+
+                      service.putExtra(
                           "quest",
-                          selected == null
-                              ? "QuestMate"
-                              : selected.name
-                  );
+                          selectedQuest.name
+                      );
 
-                  service.putExtra(
+                      service.putExtra(
                           "step",
-                          selected == null
-                              ? "Choose a quest to begin."
-                              : selected.steps.get(0)
-                  );
+                          selectedQuest.steps.isEmpty()
+                              ? "Start your quest."
+                              : selectedQuest.steps.get(0)
+                      );
+
+                  } else {
+
+                      service.putExtra(
+                          "quest",
+                          "QuestMate"
+                      );
+
+                      service.putExtra(
+                          "step",
+                          "Choose a quest."
+                      );
+                  }
 
                   if (android.os.Build.VERSION.SDK_INT >= 26) {
+
                       startForegroundService(service);
+
                   } else {
+
                       startService(service);
                   }
 
                   Toast.makeText(
-                          this,
-                          "QuestMate overlay started.",
-                          Toast.LENGTH_SHORT
+                      this,
+                      "QuestMate overlay started.",
+                      Toast.LENGTH_SHORT
                   ).show();
               }
 
-              void loadQuests() {
+              private void loadQuests() {
 
                   try {
 
                       InputStream input =
-                              getAssets().open(
-                                      "quests.json"
-                              );
+                          getAssets().open(
+                              "quests.json"
+                          );
 
                       byte[] data =
-                              new byte[input.available()];
+                          new byte[input.available()];
 
                       input.read(data);
                       input.close();
 
                       JSONArray array =
-                              new JSONArray(
-                                  new String(
-                                      data,
-                                      StandardCharsets.UTF_8
-                                  )
-                              );
-
-                      for (int i = 0;
-                           i < array.length();
-                           i++) {
-
-                          JSONObject object =
-                                  array.getJSONObject(i);
-
-                          Quest quest =
-                                  new Quest();
-
-                          quest.name =
-                                  object.optString(
-                                          "name"
-                                  );
-
-                          quest.members =
-                                  object.optBoolean(
-                                          "members"
-                                  );
-
-                          quest.difficulty =
-                                  object.optString(
-                                          "difficulty"
-                                  );
-
-                          quest.length =
-                                  object.optString(
-                                          "length"
-                                  );
-
-                          quest.questPoints =
-                                  object.optInt(
-                                          "questPoints"
-                                  );
-
-                          JSONArray steps =
-                                  object.optJSONArray(
-                                          "steps"
-                                  );
-
-                          if (steps != null) {
-
-                              for (int j = 0;
-                                   j < steps.length();
-                                   j++) {
-
-                                  quest.steps.add(
-                                      steps.getString(j)
-                                  );
-                              }
-                          }
-
-                          quests.add(quest);
-                      }
-
-                  } catch (Exception e) {
-
-                      Toast.makeText(
-                              this,
-                              "Could not load quest database.",
-                              Toast.LENGTH_LONG
-                      ).show();
-                  }
-              }
-          }
-          EOF
-
-      - name: Create OverlayService
-        run: |
-          cat > questmate-build/app/src/main/java/com/questmate/app/OverlayService.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Notification;
-          import android.app.NotificationChannel;
-          import android.app.NotificationManager;
-          import android.app.Service;
-          import android.app.ServiceInfo;
-          import android.content.Intent;
-          import android.graphics.Color;
-          import android.graphics.PixelFormat;
-          import android.os.Build;
-          import android.os.IBinder;
-          import android.provider.Settings;
-          import android.view.Gravity;
-          import android.view.MotionEvent;
-          import android.view.View;
-          import android.view.WindowManager;
-          import android.widget.Button;
-          import android.widget.LinearLayout;
-          import android.widget.TextView;
-
-          public class OverlayService extends Service {
-
-              WindowManager windowManager;
-              LinearLayout panel;
-              TextView title;
-              TextView step;
-
-              @Override
-              public void onCreate() {
-                  super.onCreate();
-
-                  createNotificationChannel();
-
-                  Notification notification =
-                          new Notification.Builder(
-                              this,
-                              "questmate_overlay"
-                          )
-                          .setContentTitle(
-                              "QuestMate overlay"
-                          )
-                          .setContentText(
-                              "QuestMate is running"
-                          )
-                          .setSmallIcon(
-                              android.R.drawable
-                                  .ic_dialog_info
-                          )
-                          .setOngoing(true)
-                          .build();
-
-                  if (Build.VERSION.SDK_INT >= 29) {
-
-                      startForeground(
-                          1001,
-                          notification,
-                          ServiceInfo
-                              .FOREGROUND_SERVICE_TYPE_MANIFEST
-                      );
-
-                  } else {
-
-                      startForeground(
-                          1001,
-                          notification
-                      );
-                  }
-
-                  showOverlay();
-              }
-
-              void createNotificationChannel() {
-
-                  if (Build.VERSION.SDK_INT >= 26) {
-
-                      NotificationChannel channel =
-                              new NotificationChannel(
-                                  "questmate_overlay",
-                                  "QuestMate Overlay",
-                                  NotificationManager
-                                      .IMPORTANCE_LOW
-                              );
-
-                      NotificationManager manager =
-                              getSystemService(
-                                  NotificationManager.class
-                              );
-
-                      manager.createNotificationChannel(
-                              channel
-                      );
-                  }
-              }
-
-              WindowManager.LayoutParams makeParams() {
-
-                  int type;
-
-                  if (Build.VERSION.SDK_INT >= 26) {
-
-                      type =
-                          WindowManager.LayoutParams
-                              .TYPE_APPLICATION_OVERLAY;
-
-                  } else {
-
-                      type =
-                          WindowManager.LayoutParams
-                              .TYPE_PHONE;
-                  }
-
-                  return new WindowManager.LayoutParams(
-                      WindowManager.LayoutParams.WRAP_CONTENT,
-                      WindowManager.LayoutParams.WRAP_CONTENT,
-                      type,
-                      WindowManager.LayoutParams
-                          .FLAG_NOT_FOCUSABLE,
-                      PixelFormat.TRANSLUCENT
-                  );
-              }
-
-              TextView makeText(
-                      String value,
-                      int size) {
-
-                  TextView text =
-                          new TextView(this);
-
-                  text.setText(value);
-                  text.setTextColor(Color.WHITE);
-                  text.setTextSize(size);
-                  text.setPadding(
-                      20,
-                      12,
-                      20,
-                      12
-                  );
-
-                  return text;
-              }
-
-              Button makeButton(String value) {
-
-                  Button button =
-                          new Button(this);
-
-                  button.setText(value);
-                  button.setAllCaps(false);
-
-                  return button;
-              }
-
-              void showOverlay() {
-
-                  if (!Settings.canDrawOverlays(this)) {
-                      stopSelf();
-                      return;
-                  }
-
-                  windowManager =
-                          (WindowManager)
-                              getSystemService(
-                                  WINDOW_SERVICE
-                              );
-
-                  panel =
-                          new LinearLayout(this);
-
-                  panel.setOrientation(
-                          LinearLayout.VERTICAL
-                  );
-
-                  panel.setPadding(
-                          10,
-                          10,
-                          10,
-                          10
-                  );
-
-                  panel.setBackgroundColor(
-                          Color.rgb(
-                              27,
-                              35,
-                              48
-                          )
-                  );
-
-                  title =
-                          makeText(
-                              "QUESTMATE",
-                              22
-                          );
-
-                  step =
-                          makeText(
-                              "QuestMate overlay active",
-                              17
-                          );
-
-                  Button next =
-                          makeButton(
-                              "NEXT STEP"
-                          );
-
-                  next.setOnClickListener(
-                      v -> step.setText(
-                          "Next step — continue your quest walkthrough."
-                      )
-                  );
-
-                  Button minimise =
-                          makeButton(
-                              "MINIMISE"
-                          );
-
-                  minimise.setOnClickListener(
-                      v -> minimise()
-                  );
-
-                  Button close =
-                          makeButton(
-                              "CLOSE OVERLAY"
-                          );
-
-                  close.setOnClickListener(
-                      v -> stopSelf()
-                  );
-
-                  panel.addView(title);
-                  panel.addView(step);
-                  panel.addView(next);
-                  panel.addView(minimise);
-                  panel.addView(close);
-
-                  WindowManager.LayoutParams params =
-                          makeParams();
-
-                  params.x = 30;
-                  params.y = 180;
-
-                  windowManager.addView(
-                          panel,
-                          params
-                  );
-              }
-
-              void minimise() {
-
-                  if (panel == null) {
-                      return;
-                  }
-
-                  panel.removeAllViews();
-
-                  TextView q =
-                          makeText(
-                              "Q",
-                              26
-                          );
-
-                  q.setGravity(
-                      Gravity.CENTER
-                  );
-
-                  q.setTextColor(
-                      Color.BLACK
-                  );
-
-                  q.setBackgroundColor(
-                      Color.rgb(
-                          73,
-                          209,
-                          125
-                      )
-                  );
-
-                  q.setOnClickListener(
-                      v -> maximise()
-                  );
-
-                  panel.addView(q);
-
-                  WindowManager.LayoutParams params =
-                          (WindowManager.LayoutParams)
-                              panel.getLayoutParams();
-
-                  params.width = 150;
-                  params.height = 150;
-
-                  windowManager.updateViewLayout(
-                          panel,
-                          params
-                  );
-              }
-
-              void maximise() {
-
-                  if (panel == null) {
-                      return;
-                  }
-
-                  panel.removeAllViews();
-
-                  title =
-                          makeText(
-                              "QUESTMATE",
-                              22
-                          );
-
-                  step =
-                          makeText(
-                              "QuestMate overlay active",
-                              17
-                          );
-
-                  Button next =
-                          makeButton(
-                              "NEXT STEP"
-                          );
-
-                  next.setOnClickListener(
-                      v -> step.setText(
-                          "Next step — continue your quest walkthrough."
-                      )
-                  );
-
-                  Button minimise =
-                          makeButton(
-                              "MINIMISE"
-                          );
-
-                  minimise.setOnClickListener(
-                      v -> minimise()
-                  );
-
-                  Button close =
-                          makeButton(
-                              "CLOSE OVERLAY"
-                          );
-
-                  close.setOnClickListener(
-                      v -> stopSelf()
-                  );
-
-                  panel.addView(title);
-                  panel.addView(step);
-                  panel.addView(next);
-                  panel.addView(minimise);
-                  panel.addView(close);
-
-                  WindowManager.LayoutParams params =
-                          (WindowManager.LayoutParams)
-                              panel.getLayoutParams();
-
-                  params.width =
-                      WindowManager.LayoutParams
-                          .WRAP_CONTENT;
-
-                  params.height =
-                      WindowManager.LayoutParams
-                          .WRAP_CONTENT;
-
-                  windowManager.updateViewLayout(
-                          panel,
-                          params
-                  );
-              }
-
-              @Override
-              public int onStartCommand(
-                      Intent intent,
-                      int flags,
-                      int startId) {
-
-                  if (intent != null &&
-                      title != null &&
-                      step != null) {
-
-                      String quest =
-                          intent.getStringExtra(
-                              "quest"
-                          );
-
-                      String currentStep =
-                          intent.getStringExtra(
-                              "step"
-                          );
-
-                      title.setText(
-                          quest == null
-                              ? "QUESTMATE"
-                              : "QUESTMATE • " + quest
-                      );
-
-                      step.setText(
-                          currentStep == null
-                              ? "QuestMate overlay active"
-                              : currentStep
-                      );
-                  }
-
-                  return START_NOT_STICKY;
-              }
-
-              @Override
-              public void onDestroy() {
-
-                  try {
-
-                      if (panel != null &&
-                          windowManager != null) {
-
-                          windowManager.removeView(
-                              panel
-                          );
-                      }
-
-                  } catch (Exception ignored) {
-                  }
-
-                  super.onDestroy();
-              }
-
-              @Override
-              public IBinder onBind(
-                      Intent intent) {
-
-                  return null;
-              }
-          }
-          EOF
-
-      - name: Download Gradle 8.9
-        run: |
-          cd questmate-build
-
-          curl -L \
-            -o gradle.zip \
-            https://services.gradle.org/distributions/gradle-8.9-bin.zip
-
-          unzip -q gradle.zip
-
-          mv gradle-8.9 gradle
-
-          rm gradle.zip
-
-          chmod +x gradle/bin/gradle
-
-      - name: Verify Gradle
-        run: |
-          cd questmate-build
-          ./gradle/bin/gradle --version
-
-      - name: Build APK
-        run: |
-          cd questmate-build
-
-          ./gradle/bin/gradle \
-            clean \
-            assembleDebug \
-            --stacktrace
-
-      - name: Prepare APK
-        run: |
-          mkdir -p dist
-
-          cp \
-            questmate-build/app/build/outputs/apk/debug/app-debug.apk \
-            dist/QuestMate.apk
-
-          echo "APK created:"
-          ls -lh dist/QuestMate.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: QuestMate-APK
-          path: dist/QuestMate.apk
-          if-no-files-found: error
+                          new JSONArray(
+                              new String(
+                                  data,
+                                  StandardChars
