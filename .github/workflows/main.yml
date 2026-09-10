@@ -170,24 +170,4 @@ jobs:
                   quests.setText("Quests");
 
                   Button minimize = new Button(this);
-                  minimize.setText("MINIMIZE");
-
-                  minimize.setOnClickListener(new View.OnClickListener() {
-                      @Override
-                      public void onClick(View v) {
-                          moveTaskToBack(true);
-                      }
-                  });
-
-                  layout.addView(title);
-                  layout.addView(subtitle);
-                  layout.addView(quests);
-                  layout.addView(minimize);
-
-                  setContentView(layout);
-              }
-          }
-          EOF
-
-      - name: Install Gradle
-        run:
+                  minimize
