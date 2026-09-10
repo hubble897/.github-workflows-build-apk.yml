@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -23,18 +24,21 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
-      - name: Create project folders
+      - name: Create QuestMate project
         run: |
           rm -rf questmate-build
+
           mkdir -p questmate-build/app/src/main/java/com/questmate/app
           mkdir -p questmate-build/app/src/main/res/values
           mkdir -p questmate-build/app/src/main/assets
 
-      - name: Create Gradle files
+      - name: Create settings.gradle
         run: |
           cat > questmate-build/settings.gradle <<'EOF'
           pluginManagement {
@@ -57,18 +61,24 @@ jobs:
           include(":app")
           EOF
 
+      - name: Create root Gradle build
+        run: |
           cat > questmate-build/build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.7.3' apply false
           }
           EOF
 
+      - name: Create Gradle properties
+        run: |
           cat > questmate-build/gradle.properties <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
+      - name: Create app Gradle build
+        run: |
           cat > questmate-build/app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
@@ -108,12 +118,26 @@ jobs:
 
           cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
           <resources>
-              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+              <style name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">@color/questmate_accent</item>
-                  <item name="android:navigationBarColor">@color/questmate_bg</item>
-                  <item name="android:statusBarColor">@color/questmate_bg</item>
-                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:colorAccent">
+                      @color/questmate_accent
+                  </item>
+
+                  <item name="android:navigationBarColor">
+                      @color/questmate_bg
+                  </item>
+
+                  <item name="android:statusBarColor">
+                      @color/questmate_bg
+                  </item>
+
+                  <item name="android:windowLightStatusBar">
+                      false
+                  </item>
+
               </style>
           </resources>
           EOF
@@ -123,24 +147,33 @@ jobs:
           cat > questmate-build/app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission
+                  android:name="android.permission.INTERNET" />
+
+              <uses-permission
+                  android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+              <uses-permission
+                  android:name="android.permission.FOREGROUND_SERVICE" />
+
+              <uses-permission
+                  android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
               <application
                   android:allowBackup="true"
                   android:label="@string/app_name"
-                  android:theme="@style/AppTheme"
-                  android:supportsRtl="true">
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme">
 
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
+
                   </activity>
 
                   <service
@@ -150,7 +183,7 @@ jobs:
 
                       <property
                           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                          android:value="Floating QuestMate quest walkthrough overlay shown at the user's request while using another app." />
+                          android:value="QuestMate floating OSRS quest walkthrough overlay started by the user." />
 
                   </service>
 
@@ -164,44 +197,44 @@ jobs:
           cat > questmate-build/app/src/main/assets/quests.json <<'EOF'
           [
             {
-              "name":"Cook's Assistant",
-              "members":false,
-              "difficulty":"Novice",
-              "length":"Short",
-              "questPoints":1,
-              "steps":[
-                "Start the quest and speak with the cook in Lumbridge Castle.",
+              "name": "Cook's Assistant",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "steps": [
+                "Speak with the cook in Lumbridge Castle to begin.",
                 "Collect the ingredients requested by the cook.",
-                "Return the ingredients to the cook.",
-                "Finish the conversation and receive the reward."
+                "Return all required ingredients to the cook.",
+                "Finish the conversation and receive your reward."
               ]
             },
             {
-              "name":"The Restless Ghost",
-              "members":false,
-              "difficulty":"Novice",
-              "length":"Short",
-              "questPoints":1,
-              "steps":[
-                "Start the quest by speaking with Father Aereck in Lumbridge.",
-                "Find the ghost and investigate what is troubling it.",
+              "name": "The Restless Ghost",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "steps": [
+                "Speak with Father Aereck in Lumbridge.",
+                "Investigate the ghost's problem.",
                 "Obtain what you need to communicate with the ghost.",
                 "Return to the ghost and resolve its problem.",
                 "Return to Father Aereck and claim your reward."
               ]
             },
             {
-              "name":"Romeo & Juliet",
-              "members":false,
-              "difficulty":"Novice",
-              "length":"Short",
-              "questPoints":5,
-              "steps":[
-                "Speak with Romeo in Varrock to begin the quest.",
-                "Find Juliet and learn what is preventing the couple from being together.",
-                "Carry out the requested tasks involving Romeo and Juliet.",
-                "Follow the plan to arrange their escape.",
-                "Return to Romeo and finish the final conversation."
+              "name": "Romeo & Juliet",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 5,
+              "steps": [
+                "Speak with Romeo in Varrock.",
+                "Find Juliet and learn what has happened.",
+                "Carry out the tasks required to help the couple.",
+                "Follow the plan for their escape.",
+                "Return to Romeo and complete the final conversation."
               ]
             }
           ]
@@ -219,14 +252,13 @@ jobs:
           import android.provider.Settings;
           import android.graphics.Color;
           import android.graphics.Typeface;
-          import android.view.View;
           import android.widget.*;
-          import org.json.JSONArray;
-          import org.json.JSONObject;
           import java.io.InputStream;
           import java.nio.charset.StandardCharsets;
           import java.util.ArrayList;
           import java.util.List;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
 
           public class MainActivity extends Activity {
 
@@ -246,85 +278,138 @@ jobs:
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+
                   loadQuests();
                   showHome();
               }
 
               TextView makeText(String value, int size) {
-                  TextView t = new TextView(this);
-                  t.setText(value);
-                  t.setTextSize(size);
-                  t.setTextColor(Color.WHITE);
-                  t.setPadding(24, 18, 24, 18);
-                  return t;
+                  TextView text = new TextView(this);
+
+                  text.setText(value);
+                  text.setTextSize(size);
+                  text.setTextColor(Color.WHITE);
+                  text.setPadding(24, 18, 24, 18);
+
+                  return text;
               }
 
               Button makeButton(String value) {
-                  Button b = new Button(this);
-                  b.setText(value);
-                  b.setTextColor(Color.WHITE);
-                  b.setAllCaps(false);
-                  return b;
+                  Button button = new Button(this);
+
+                  button.setText(value);
+                  button.setTextColor(Color.WHITE);
+                  button.setAllCaps(false);
+
+                  return button;
               }
 
               void createBase() {
                   ScrollView scroll = new ScrollView(this);
 
                   root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setPadding(18, 18, 18, 18);
-                  root.setBackgroundColor(Color.rgb(16, 20, 28));
+                  root.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
+                  root.setPadding(
+                          18,
+                          18,
+                          18,
+                          18
+                  );
+
+                  root.setBackgroundColor(
+                          Color.rgb(16, 20, 28)
+                  );
 
                   scroll.addView(root);
+
                   setContentView(scroll);
               }
 
               void showHome() {
                   createBase();
 
-                  TextView title = makeText("QUESTMATE", 30);
-                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  TextView title =
+                          makeText("QUESTMATE", 30);
+
+                  title.setTypeface(
+                          Typeface.DEFAULT_BOLD
+                  );
+
                   root.addView(title);
 
-                  root.addView(makeText("OSRS Quest Companion", 17));
+                  root.addView(
+                          makeText(
+                                  "OSRS Quest Companion",
+                                  17
+                          )
+                  );
 
-                  Button overlay = makeButton("START OVERLAY");
-                  overlay.setOnClickListener(v -> startOverlay());
+                  Button overlay =
+                          makeButton("START OVERLAY");
+
+                  overlay.setOnClickListener(
+                          v -> startOverlay()
+                  );
+
                   root.addView(overlay);
 
-                  EditText search = new EditText(this);
+                  EditText search =
+                          new EditText(this);
+
                   search.setHint("Search quests");
                   search.setTextColor(Color.WHITE);
                   search.setHintTextColor(Color.LTGRAY);
+
                   root.addView(search);
 
-                  LinearLayout list = new LinearLayout(this);
-                  list.setOrientation(LinearLayout.VERTICAL);
+                  LinearLayout list =
+                          new LinearLayout(this);
+
+                  list.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
                   root.addView(list);
 
                   Runnable refresh = () -> {
+
                       list.removeAllViews();
 
                       String query =
-                              search.getText().toString().toLowerCase();
+                              search.getText()
+                                      .toString()
+                                      .toLowerCase();
 
-                      for (Quest q : quests) {
-                          if (!q.name.toLowerCase().contains(query)) {
+                      for (Quest quest : quests) {
+
+                          if (!quest.name
+                                  .toLowerCase()
+                                  .contains(query)) {
                               continue;
                           }
 
-                          Button item = makeButton(
-                                  q.name +
-                                  (q.members ? " • Members" : " • F2P")
+                          Button item =
+                                  makeButton(
+                                          quest.name +
+                                          (quest.members
+                                              ? " • Members"
+                                              : " • F2P")
+                                  );
+
+                          item.setOnClickListener(
+                                  v -> showQuest(quest)
                           );
 
-                          item.setOnClickListener(v -> showQuest(q));
                           list.addView(item);
                       }
                   };
 
                   search.addTextChangedListener(
                           new android.text.TextWatcher() {
+
                               public void beforeTextChanged(
                                       CharSequence s,
                                       int start,
@@ -349,79 +434,112 @@ jobs:
                   refresh.run();
               }
 
-              void showQuest(Quest q) {
-                  selected = q;
+              void showQuest(Quest quest) {
+
+                  selected = quest;
 
                   createBase();
 
-                  Button back = makeButton("← QUESTS");
-                  back.setOnClickListener(v -> showHome());
+                  Button back =
+                          makeButton("← QUESTS");
+
+                  back.setOnClickListener(
+                          v -> showHome()
+                  );
+
                   root.addView(back);
 
-                  TextView title = makeText(q.name, 28);
-                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  TextView title =
+                          makeText(
+                                  quest.name,
+                                  28
+                          );
+
+                  title.setTypeface(
+                          Typeface.DEFAULT_BOLD
+                  );
+
                   root.addView(title);
 
-                  root.addView(makeText(
-                          (q.members ? "Members" : "Free-to-play") +
-                          " • " +
-                          q.difficulty +
-                          " • " +
-                          q.length +
-                          " • " +
-                          q.questPoints +
-                          " Quest Points",
-                          16
-                  ));
+                  root.addView(
+                          makeText(
+                                  (quest.members
+                                      ? "Members"
+                                      : "Free-to-play")
+                                  + " • "
+                                  + quest.difficulty
+                                  + " • "
+                                  + quest.length
+                                  + " • "
+                                  + quest.questPoints
+                                  + " Quest Points",
+                                  16
+                          )
+                  );
 
-                  root.addView(makeText("FULL WALKTHROUGH", 22));
+                  root.addView(
+                          makeText(
+                                  "FULL WALKTHROUGH",
+                                  22
+                          )
+                  );
 
-                  for (int i = 0; i < q.steps.size(); i++) {
+                  for (int i = 0;
+                       i < quest.steps.size();
+                       i++) {
 
-                      CheckBox cb = new CheckBox(this);
+                      CheckBox checkBox =
+                              new CheckBox(this);
 
-                      cb.setText(
-                              (i + 1) +
-                              ". " +
-                              q.steps.get(i)
+                      checkBox.setText(
+                              (i + 1)
+                              + ". "
+                              + quest.steps.get(i)
                       );
 
-                      cb.setTextColor(Color.WHITE);
-                      cb.setTextSize(16);
+                      checkBox.setTextColor(
+                              Color.WHITE
+                      );
+
+                      checkBox.setTextSize(16);
 
                       String key =
-                              "quest_" +
-                              q.name.replaceAll(
+                              "quest_"
+                              + quest.name.replaceAll(
                                       "[^A-Za-z0-9]",
-                                      "_"
-                              ) +
-                              "_step_" +
-                              i;
+                                      "_")
+                              + "_step_"
+                              + i;
 
-                      cb.setChecked(
+                      checkBox.setChecked(
                               getPreferences(0)
-                                      .getBoolean(key, false)
+                                  .getBoolean(
+                                      key,
+                                      false
+                                  )
                       );
 
-                      cb.setOnCheckedChangeListener(
+                      checkBox.setOnCheckedChangeListener(
                               (button, checked) ->
-                                      getPreferences(0)
-                                              .edit()
-                                              .putBoolean(
-                                                      key,
-                                                      checked
-                                              )
-                                              .apply()
+                                  getPreferences(0)
+                                      .edit()
+                                      .putBoolean(
+                                          key,
+                                          checked
+                                      )
+                                      .apply()
                       );
 
-                      root.addView(cb);
+                      root.addView(checkBox);
                   }
 
                   Button complete =
-                          makeButton("MARK QUEST COMPLETE");
+                          makeButton(
+                                  "MARK QUEST COMPLETE"
+                          );
 
-                  complete.setOnClickListener(v ->
-                          Toast.makeText(
+                  complete.setOnClickListener(
+                          v -> Toast.makeText(
                                   this,
                                   "Quest completed!",
                                   Toast.LENGTH_SHORT
@@ -430,16 +548,16 @@ jobs:
 
                   root.addView(complete);
 
-                  Button startOverlay =
+                  Button start =
                           makeButton(
                                   "START OVERLAY WITH THIS QUEST"
                           );
 
-                  startOverlay.setOnClickListener(
+                  start.setOnClickListener(
                           v -> startOverlay()
                   );
 
-                  root.addView(startOverlay);
+                  root.addView(start);
               }
 
               void startOverlay() {
@@ -448,11 +566,11 @@ jobs:
 
                       Intent settings =
                               new Intent(
-                                      Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                      Uri.parse(
-                                              "package:" +
-                                              getPackageName()
-                                      )
+                                  Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                  Uri.parse(
+                                      "package:"
+                                      + getPackageName()
+                                  )
                               );
 
                       startActivity(settings);
@@ -468,22 +586,22 @@ jobs:
 
                   Intent service =
                           new Intent(
-                                  this,
-                                  OverlayService.class
+                              this,
+                              OverlayService.class
                           );
 
                   service.putExtra(
                           "quest",
                           selected == null
-                                  ? "QuestMate"
-                                  : selected.name
+                              ? "QuestMate"
+                              : selected.name
                   );
 
                   service.putExtra(
                           "step",
                           selected == null
-                                  ? "Choose a quest to begin."
-                                  : selected.steps.get(0)
+                              ? "Choose a quest to begin."
+                              : selected.steps.get(0)
                   );
 
                   if (android.os.Build.VERSION.SDK_INT >= 26) {
@@ -504,7 +622,9 @@ jobs:
                   try {
 
                       InputStream input =
-                              getAssets().open("quests.json");
+                              getAssets().open(
+                                      "quests.json"
+                              );
 
                       byte[] data =
                               new byte[input.available()];
@@ -514,10 +634,10 @@ jobs:
 
                       JSONArray array =
                               new JSONArray(
-                                      new String(
-                                              data,
-                                              StandardCharsets.UTF_8
-                                      )
+                                  new String(
+                                      data,
+                                      StandardCharsets.UTF_8
+                                  )
                               );
 
                       for (int i = 0;
@@ -527,38 +647,52 @@ jobs:
                           JSONObject object =
                                   array.getJSONObject(i);
 
-                          Quest q = new Quest();
+                          Quest quest =
+                                  new Quest();
 
-                          q.name =
-                                  object.optString("name");
+                          quest.name =
+                                  object.optString(
+                                          "name"
+                                  );
 
-                          q.members =
-                                  object.optBoolean("members");
+                          quest.members =
+                                  object.optBoolean(
+                                          "members"
+                                  );
 
-                          q.difficulty =
-                                  object.optString("difficulty");
+                          quest.difficulty =
+                                  object.optString(
+                                          "difficulty"
+                                  );
 
-                          q.length =
-                                  object.optString("length");
+                          quest.length =
+                                  object.optString(
+                                          "length"
+                                  );
 
-                          q.questPoints =
-                                  object.optInt("questPoints");
+                          quest.questPoints =
+                                  object.optInt(
+                                          "questPoints"
+                                  );
 
                           JSONArray steps =
-                                  object.optJSONArray("steps");
+                                  object.optJSONArray(
+                                          "steps"
+                                  );
 
                           if (steps != null) {
+
                               for (int j = 0;
                                    j < steps.length();
                                    j++) {
 
-                                  q.steps.add(
-                                          steps.getString(j)
+                                  quest.steps.add(
+                                      steps.getString(j)
                                   );
                               }
                           }
 
-                          quests.add(q);
+                          quests.add(quest);
                       }
 
                   } catch (Exception e) {
@@ -604,9 +738,6 @@ jobs:
               TextView title;
               TextView step;
 
-              int positionX = 30;
-              int positionY = 180;
-
               @Override
               public void onCreate() {
                   super.onCreate();
@@ -615,17 +746,18 @@ jobs:
 
                   Notification notification =
                           new Notification.Builder(
-                                  this,
-                                  "questmate_overlay"
+                              this,
+                              "questmate_overlay"
                           )
                           .setContentTitle(
-                                  "QuestMate overlay"
+                              "QuestMate overlay"
                           )
                           .setContentText(
-                                  "QuestMate is running"
+                              "QuestMate is running"
                           )
                           .setSmallIcon(
-                                  android.R.drawable.ic_dialog_info
+                              android.R.drawable
+                                  .ic_dialog_info
                           )
                           .setOngoing(true)
                           .build();
@@ -633,17 +765,17 @@ jobs:
                   if (Build.VERSION.SDK_INT >= 29) {
 
                       startForeground(
-                              1001,
-                              notification,
-                              ServiceInfo
-                                      .FOREGROUND_SERVICE_TYPE_MANIFEST
+                          1001,
+                          notification,
+                          ServiceInfo
+                              .FOREGROUND_SERVICE_TYPE_MANIFEST
                       );
 
                   } else {
 
                       startForeground(
-                              1001,
-                              notification
+                          1001,
+                          notification
                       );
                   }
 
@@ -656,15 +788,15 @@ jobs:
 
                       NotificationChannel channel =
                               new NotificationChannel(
-                                      "questmate_overlay",
-                                      "QuestMate Overlay",
-                                      NotificationManager
-                                              .IMPORTANCE_LOW
+                                  "questmate_overlay",
+                                  "QuestMate Overlay",
+                                  NotificationManager
+                                      .IMPORTANCE_LOW
                               );
 
                       NotificationManager manager =
                               getSystemService(
-                                      NotificationManager.class
+                                  NotificationManager.class
                               );
 
                       manager.createNotificationChannel(
@@ -678,51 +810,57 @@ jobs:
                   int type;
 
                   if (Build.VERSION.SDK_INT >= 26) {
+
                       type =
-                              WindowManager.LayoutParams
-                                      .TYPE_APPLICATION_OVERLAY;
+                          WindowManager.LayoutParams
+                              .TYPE_APPLICATION_OVERLAY;
+
                   } else {
+
                       type =
-                              WindowManager.LayoutParams
-                                      .TYPE_PHONE;
+                          WindowManager.LayoutParams
+                              .TYPE_PHONE;
                   }
 
                   return new WindowManager.LayoutParams(
-                          WindowManager.LayoutParams.WRAP_CONTENT,
-                          WindowManager.LayoutParams.WRAP_CONTENT,
-                          type,
-                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                          PixelFormat.TRANSLUCENT
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      type,
+                      WindowManager.LayoutParams
+                          .FLAG_NOT_FOCUSABLE,
+                      PixelFormat.TRANSLUCENT
                   );
               }
 
-              TextView makeText(String value, int size) {
+              TextView makeText(
+                      String value,
+                      int size) {
 
-                  TextView t =
+                  TextView text =
                           new TextView(this);
 
-                  t.setText(value);
-                  t.setTextColor(Color.WHITE);
-                  t.setTextSize(size);
-                  t.setPadding(
-                          20,
-                          12,
-                          20,
-                          12
+                  text.setText(value);
+                  text.setTextColor(Color.WHITE);
+                  text.setTextSize(size);
+                  text.setPadding(
+                      20,
+                      12,
+                      20,
+                      12
                   );
 
-                  return t;
+                  return text;
               }
 
               Button makeButton(String value) {
 
-                  Button b =
+                  Button button =
                           new Button(this);
 
-                  b.setText(value);
-                  b.setAllCaps(false);
+                  button.setText(value);
+                  button.setAllCaps(false);
 
-                  return b;
+                  return button;
               }
 
               void showOverlay() {
@@ -734,9 +872,9 @@ jobs:
 
                   windowManager =
                           (WindowManager)
-                                  getSystemService(
-                                          WINDOW_SERVICE
-                                  );
+                              getSystemService(
+                                  WINDOW_SERVICE
+                              );
 
                   panel =
                           new LinearLayout(this);
@@ -754,52 +892,51 @@ jobs:
 
                   panel.setBackgroundColor(
                           Color.rgb(
-                                  27,
-                                  35,
-                                  48
+                              27,
+                              35,
+                              48
                           )
                   );
 
                   title =
                           makeText(
-                                  "QUESTMATE",
-                                  22
+                              "QUESTMATE",
+                              22
                           );
 
                   step =
                           makeText(
-                                  "QuestMate overlay active",
-                                  17
+                              "QuestMate overlay active",
+                              17
                           );
 
                   Button next =
                           makeButton(
-                                  "NEXT STEP"
+                              "NEXT STEP"
                           );
 
                   next.setOnClickListener(
-                          v ->
-                                  step.setText(
-                                          "Next step — continue your quest walkthrough."
-                                  )
+                      v -> step.setText(
+                          "Next step — continue your quest walkthrough."
+                      )
                   );
 
                   Button minimise =
                           makeButton(
-                                  "MINIMISE"
+                              "MINIMISE"
                           );
 
                   minimise.setOnClickListener(
-                          v -> minimise()
+                      v -> minimise()
                   );
 
                   Button close =
                           makeButton(
-                                  "CLOSE OVERLAY"
+                              "CLOSE OVERLAY"
                           );
 
                   close.setOnClickListener(
-                          v -> stopSelf()
+                      v -> stopSelf()
                   );
 
                   panel.addView(title);
@@ -811,70 +948,8 @@ jobs:
                   WindowManager.LayoutParams params =
                           makeParams();
 
-                  params.x = positionX;
-                  params.y = positionY;
-
-                  panel.setOnTouchListener(
-                          new View.OnTouchListener() {
-
-                              int downX;
-                              int downY;
-                              int oldX;
-                              int oldY;
-
-                              @Override
-                              public boolean onTouch(
-                                      View v,
-                                      MotionEvent event) {
-
-                                  if (event.getAction() ==
-                                          MotionEvent.ACTION_DOWN) {
-
-                                      downX =
-                                              (int)
-                                                      event.getRawX();
-
-                                      downY =
-                                              (int)
-                                                      event.getRawY();
-
-                                      oldX =
-                                              params.x;
-
-                                      oldY =
-                                              params.y;
-
-                                      return true;
-                                  }
-
-                                  if (event.getAction() ==
-                                          MotionEvent.ACTION_MOVE) {
-
-                                      params.x =
-                                              oldX +
-                                              (int)
-                                                      event.getRawX()
-                                              - downX;
-
-                                      params.y =
-                                              oldY +
-                                              (int)
-                                                      event.getRawY()
-                                              - downY;
-
-                                      windowManager
-                                              .updateViewLayout(
-                                                      panel,
-                                                      params
-                                              );
-
-                                      return true;
-                                  }
-
-                                  return false;
-                              }
-                          }
-                  );
+                  params.x = 30;
+                  params.y = 180;
 
                   windowManager.addView(
                           panel,
@@ -892,35 +967,35 @@ jobs:
 
                   TextView q =
                           makeText(
-                                  "Q",
-                                  26
+                              "Q",
+                              26
                           );
 
                   q.setGravity(
-                          Gravity.CENTER
+                      Gravity.CENTER
                   );
 
                   q.setTextColor(
-                          Color.BLACK
+                      Color.BLACK
                   );
 
                   q.setBackgroundColor(
-                          Color.rgb(
-                                  73,
-                                  209,
-                                  125
-                          )
+                      Color.rgb(
+                          73,
+                          209,
+                          125
+                      )
                   );
 
                   q.setOnClickListener(
-                          v -> maximise()
+                      v -> maximise()
                   );
 
                   panel.addView(q);
 
                   WindowManager.LayoutParams params =
                           (WindowManager.LayoutParams)
-                                  panel.getLayoutParams();
+                              panel.getLayoutParams();
 
                   params.width = 150;
                   params.height = 150;
@@ -941,44 +1016,43 @@ jobs:
 
                   title =
                           makeText(
-                                  "QUESTMATE",
-                                  22
+                              "QUESTMATE",
+                              22
                           );
 
                   step =
                           makeText(
-                                  "QuestMate overlay active",
-                                  17
+                              "QuestMate overlay active",
+                              17
                           );
 
                   Button next =
                           makeButton(
-                                  "NEXT STEP"
+                              "NEXT STEP"
                           );
 
                   next.setOnClickListener(
-                          v ->
-                                  step.setText(
-                                          "Next step — continue your quest walkthrough."
-                                  )
+                      v -> step.setText(
+                          "Next step — continue your quest walkthrough."
+                      )
                   );
 
                   Button minimise =
                           makeButton(
-                                  "MINIMISE"
+                              "MINIMISE"
                           );
 
                   minimise.setOnClickListener(
-                          v -> minimise()
+                      v -> minimise()
                   );
 
                   Button close =
                           makeButton(
-                                  "CLOSE OVERLAY"
+                              "CLOSE OVERLAY"
                           );
 
                   close.setOnClickListener(
-                          v -> stopSelf()
+                      v -> stopSelf()
                   );
 
                   panel.addView(title);
@@ -989,13 +1063,15 @@ jobs:
 
                   WindowManager.LayoutParams params =
                           (WindowManager.LayoutParams)
-                                  panel.getLayoutParams();
+                              panel.getLayoutParams();
 
                   params.width =
-                          WindowManager.LayoutParams.WRAP_CONTENT;
+                      WindowManager.LayoutParams
+                          .WRAP_CONTENT;
 
                   params.height =
-                          WindowManager.LayoutParams.WRAP_CONTENT;
+                      WindowManager.LayoutParams
+                          .WRAP_CONTENT;
 
                   windowManager.updateViewLayout(
                           panel,
@@ -1010,30 +1086,29 @@ jobs:
                       int startId) {
 
                   if (intent != null &&
-                          title != null &&
-                          step != null) {
+                      title != null &&
+                      step != null) {
 
                       String quest =
-                              intent.getStringExtra(
-                                      "quest"
-                              );
+                          intent.getStringExtra(
+                              "quest"
+                          );
 
                       String currentStep =
-                              intent.getStringExtra(
-                                      "step"
-                              );
+                          intent.getStringExtra(
+                              "step"
+                          );
 
                       title.setText(
-                              quest == null
-                                      ? "QUESTMATE"
-                                      : "QUESTMATE • " +
-                                        quest
+                          quest == null
+                              ? "QUESTMATE"
+                              : "QUESTMATE • " + quest
                       );
 
                       step.setText(
-                              currentStep == null
-                                      ? "QuestMate overlay active"
-                                      : currentStep
+                          currentStep == null
+                              ? "QuestMate overlay active"
+                              : currentStep
                       );
                   }
 
@@ -1046,10 +1121,10 @@ jobs:
                   try {
 
                       if (panel != null &&
-                              windowManager != null) {
+                          windowManager != null) {
 
                           windowManager.removeView(
-                                  panel
+                              panel
                           );
                       }
 
@@ -1071,23 +1146,42 @@ jobs:
       - name: Download Gradle 8.9
         run: |
           cd questmate-build
-          curl -L -o gradle.zip \
+
+          curl -L \
+            -o gradle.zip \
             https://services.gradle.org/distributions/gradle-8.9-bin.zip
+
           unzip -q gradle.zip
+
           mv gradle-8.9 gradle
+
           rm gradle.zip
+
           chmod +x gradle/bin/gradle
+
+      - name: Verify Gradle
+        run: |
+          cd questmate-build
+          ./gradle/bin/gradle --version
 
       - name: Build APK
         run: |
           cd questmate-build
-          ./gradle clean assembleDebug --stacktrace
+
+          ./gradle/bin/gradle \
+            clean \
+            assembleDebug \
+            --stacktrace
 
       - name: Prepare APK
         run: |
           mkdir -p dist
-          cp questmate-build/app/build/outputs/apk/debug/app-debug.apk \
+
+          cp \
+            questmate-build/app/build/outputs/apk/debug/app-debug.apk \
             dist/QuestMate.apk
+
+          echo "APK created:"
           ls -lh dist/QuestMate.apk
 
       - name: Upload APK
