@@ -12,11 +12,14 @@ permissions:
 
 jobs:
   build:
+    name: Build QuestMate
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
+
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -24,176 +27,308 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android
+
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK
+
+      - name: Install Android SDK packages
+        shell: bash
         run: |
-          yes | sdkmanager --licenses || true
+          set -e
+
+          yes | sdkmanager --licenses >/dev/null || true
+
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Create project
+
+      - name: Create QuestMate project
+        shell: bash
         run: |
+          set -e
+
+          rm -rf questmate
+          rm -rf dist
+
           mkdir -p questmate/app/src/main/java/com/questmate/app
           mkdir -p questmate/app/src/main/res/values
 
+
           cat > questmate/settings.gradle <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
 
-          rootProject.name = "QuestMate"
-          include(":app")
-          EOF
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "QuestMate"
+
+include(":app")
+EOF
+
 
           cat > questmate/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application' version '8.7.3' apply false
-          }
-          EOF
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}
+EOF
+
 
           cat > questmate/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=false
-          EOF
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.nonTransitiveRClass=false
+EOF
+
 
           cat > questmate/app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
+plugins {
+    id 'com.android.application'
+}
 
-          android {
-              namespace 'com.questmate.app'
-              compileSdk 35
+android {
+    namespace 'com.questmate.app'
 
-              defaultConfig {
-                  applicationId 'com.questmate.app'
-                  minSdk 23
-                  targetSdk 35
-                  versionCode 1
-                  versionName '1.0'
-              }
-          }
-          EOF
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.questmate.app'
+        minSdk 23
+        targetSdk 35
+
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+
+        release {
+            minifyEnabled false
+        }
+    }
+}
+EOF
+
 
           cat > questmate/app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<?xml version="1.0" encoding="utf-8"?>
 
-              <application
-                  android:theme="@style/AppTheme"
-                  android:label="QuestMate">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
+    <application
+        android:allowBackup="true"
+        android:label="QuestMate"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
 
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
 
-                  </activity>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
 
-              </application>
+        </activity>
 
-          </manifest>
-          EOF
+    </application>
+
+</manifest>
+EOF
+
 
           cat > questmate/app/src/main/res/values/styles.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:statusBarColor">#101318</item>
-                  <item name="android:navigationBarColor">#101318</item>
-              </style>
-          </resources>
-          EOF
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources>
+
+    <style
+        name="AppTheme"
+        parent="android:style/Theme.Material.NoActionBar">
+
+        <item name="android:fontFamily">sans</item>
+        <item name="android:statusBarColor">#101318</item>
+        <item name="android:navigationBarColor">#101318</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+    </style>
+
+</resources>
+EOF
+
 
           cat > questmate/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-          package com.questmate.app;
+package com.questmate.app;
 
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.graphics.Color;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.LinearLayout;
-          import android.widget.TextView;
+import android.app.Activity;
+import android.os.Bundle;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.view.Gravity;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
-          public class MainActivity extends Activity {
+public class MainActivity extends Activity {
 
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
 
-                  LinearLayout layout = new LinearLayout(this);
-                  layout.setOrientation(LinearLayout.VERTICAL);
-                  layout.setGravity(Gravity.CENTER);
-                  layout.setPadding(30, 30, 30, 30);
-                  layout.setBackgroundColor(Color.rgb(16, 19, 24));
+        LinearLayout layout = new LinearLayout(this);
 
-                  TextView title = new TextView(this);
-                  title.setText("QuestMate");
-                  title.setTextColor(Color.WHITE);
-                  title.setTextSize(32);
-                  title.setGravity(Gravity.CENTER);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER);
+        layout.setPadding(30, 30, 30, 30);
 
-                  layout.addView(title);
+        layout.setBackgroundColor(
+                Color.rgb(16, 19, 24)
+        );
 
-                  TextView message = new TextView(this);
-                  message.setText("OSRS Quest Guide");
-                  message.setTextColor(Color.WHITE);
-                  message.setTextSize(20);
-                  message.setGravity(Gravity.CENTER);
-                  message.setPadding(0, 30, 0, 30);
 
-                  layout.addView(message);
+        TextView title = new TextView(this);
 
-                  Button minimize = new Button(this);
-                  minimize.setText("MINIMIZE");
+        title.setText("QuestMate");
 
-                  minimize.setOnClickListener(v -> moveTaskToBack(true));
+        title.setTextColor(Color.WHITE);
 
-                  layout.addView(minimize);
+        title.setTextSize(32);
 
-                  setContentView(layout);
-              }
-          }
-          EOF
+        title.setTypeface(
+                Typeface.DEFAULT,
+                Typeface.BOLD
+        );
 
-      - name: Install Gradle
+        title.setGravity(Gravity.CENTER);
+
+
+        layout.addView(
+                title,
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                )
+        );
+
+
+        TextView subtitle = new TextView(this);
+
+        subtitle.setText(
+                "OSRS Quest Guide"
+        );
+
+        subtitle.setTextColor(Color.WHITE);
+
+        subtitle.setTextSize(20);
+
+        subtitle.setGravity(Gravity.CENTER);
+
+        subtitle.setPadding(
+                0,
+                25,
+                0,
+                25
+        );
+
+
+        layout.addView(
+                subtitle,
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                )
+        );
+
+
+        TextView status = new TextView(this);
+
+        status.setText(
+                "QuestMate is ready."
+        );
+
+        status.setTextColor(Color.LTGRAY);
+
+        status.setTextSize(16);
+
+        status.setGravity(Gravity.CENTER);
+
+
+        layout.addView(
+                status,
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                )
+        );
+
+
+        setContentView(layout);
+    }
+}
+EOF
+
+
+      - name: Install Gradle 8.9
+        shell: bash
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          set -e
+
+          wget -q \
+            https://services.gradle.org/distributions/gradle-8.9-bin.zip
+
           unzip -q gradle-8.9-bin.zip
+
           echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-      - name: Build APK
+          gradle --version
+
+
+      - name: Build QuestMate APK
+        shell: bash
         run: |
+          set -e
+
           cd questmate
-          gradle clean assembleDebug --no-daemon --stacktrace
+
+          gradle clean assembleDebug \
+            --no-daemon \
+            --stacktrace
+
 
       - name: Prepare APK
+        shell: bash
         run: |
+          set -e
+
           mkdir -p dist
-          cp questmate/app/build/outputs/apk/debug/app-debug.apk dist/QuestMate.apk
+
+          test -f \
+            questmate/app/build/outputs/apk/debug/app-debug.apk
+
+          cp \
+            questmate/app/build/outputs/apk/debug/app-debug.apk \
+            dist/QuestMate.apk
+
+          echo "APK created successfully:"
+
           ls -lh dist/QuestMate.apk
+
 
       - name: Upload QuestMate APK
         uses: actions/upload-artifact@v4
