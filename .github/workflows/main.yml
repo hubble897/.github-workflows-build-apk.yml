@@ -12,673 +12,193 @@ permissions:
 
 jobs:
   build:
-    name: Build QuestMate APK
     runs-on: ubuntu-latest
 
     steps:
-
-      # ------------------------------------------------------------
-      # 1. CHECKOUT
-      # ------------------------------------------------------------
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ------------------------------------------------------------
-      # 2. JAVA 17
-      # ------------------------------------------------------------
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-
-      # ------------------------------------------------------------
-      # 3. ANDROID SDK
-      # ------------------------------------------------------------
-      - name: Set up Android SDK
+      - name: Set up Android
         uses: android-actions/setup-android@v3
 
-
-      # ------------------------------------------------------------
-      # 4. INSTALL ANDROID SDK PACKAGES
-      # ------------------------------------------------------------
-      - name: Install Android SDK packages
-        shell: bash
+      - name: Install Android SDK
         run: |
-          set -e
-
-          yes | sdkmanager --licenses > /dev/null || true
-
+          yes | sdkmanager --licenses || true
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-
-      # ------------------------------------------------------------
-      # 5. CREATE CLEAN QUESTMATE PROJECT
-      # ------------------------------------------------------------
-      - name: Create QuestMate project
-        shell: bash
+      - name: Create project
         run: |
-          set -e
+          mkdir -p questmate/app/src/main/java/com/questmate/app
+          mkdir -p questmate/app/src/main/res/values
+
+          cat > questmate/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "QuestMate"
+          include(":app")
+          EOF
+
+          cat > questmate/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > questmate/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=false
+          EOF
+
+          cat > questmate/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.questmate.app'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.questmate.app'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+          cat > questmate/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="QuestMate">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+          cat > questmate/app/src/main/res/values/styles.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:statusBarColor">#101318</item>
+                  <item name="android:navigationBarColor">#101318</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > questmate/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
+          package com.questmate.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.view.Gravity;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public class MainActivity extends Activity {
 
-          rm -rf questmate-build
-          mkdir -p questmate-build
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
 
-          mkdir -p questmate-build/app/src/main/java/com/questmate/app
-          mkdir -p questmate-build/app/src/main/res/values
+                  LinearLayout layout = new LinearLayout(this);
+                  layout.setOrientation(LinearLayout.VERTICAL);
+                  layout.setGravity(Gravity.CENTER);
+                  layout.setPadding(30, 30, 30, 30);
+                  layout.setBackgroundColor(Color.rgb(16, 19, 24));
 
+                  TextView title = new TextView(this);
+                  title.setText("QuestMate");
+                  title.setTextColor(Color.WHITE);
+                  title.setTextSize(32);
+                  title.setGravity(Gravity.CENTER);
 
-          # --------------------------------------------------------
-          # settings.gradle
-          # --------------------------------------------------------
-          cat > questmate-build/settings.gradle <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
+                  layout.addView(title);
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+                  TextView message = new TextView(this);
+                  message.setText("OSRS Quest Guide");
+                  message.setTextColor(Color.WHITE);
+                  message.setTextSize(20);
+                  message.setGravity(Gravity.CENTER);
+                  message.setPadding(0, 30, 0, 30);
 
-rootProject.name = "QuestMate"
-include(":app")
-EOF
+                  layout.addView(message);
 
+                  Button minimize = new Button(this);
+                  minimize.setText("MINIMIZE");
 
-          # --------------------------------------------------------
-          # root build.gradle
-          # --------------------------------------------------------
-          cat > questmate-build/build.gradle <<'EOF'
-plugins {
-    id 'com.android.application' version '8.7.3' apply false
-}
-EOF
+                  minimize.setOnClickListener(v -> moveTaskToBack(true));
 
+                  layout.addView(minimize);
 
-          # --------------------------------------------------------
-          # gradle.properties
-          # --------------------------------------------------------
-          cat > questmate-build/gradle.properties <<'EOF'
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.nonTransitiveRClass=false
-EOF
+                  setContentView(layout);
+              }
+          }
+          EOF
 
-
-          # --------------------------------------------------------
-          # app/build.gradle
-          # --------------------------------------------------------
-          cat > questmate-build/app/build.gradle <<'EOF'
-plugins {
-    id 'com.android.application'
-}
-
-android {
-    namespace 'com.questmate.app'
-    compileSdk 35
-
-    defaultConfig {
-        applicationId 'com.questmate.app'
-        minSdk 23
-        targetSdk 35
-        versionCode 1
-        versionName '1.0'
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
-
-        debug {
-            minifyEnabled false
-        }
-    }
-}
-EOF
-
-
-          # --------------------------------------------------------
-          # AndroidManifest.xml
-          # --------------------------------------------------------
-          cat > questmate-build/app/src/main/AndroidManifest.xml <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-
-    <application
-        android:allowBackup="true"
-        android:label="QuestMate"
-        android:supportsRtl="true"
-        android:theme="@style/AppTheme">
-
-        <activity
-            android:name=".MainActivity"
-            android:screenOrientation="portrait"
-            android:exported="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-        </activity>
-
-    </application>
-
-</manifest>
-EOF
-
-
-          # --------------------------------------------------------
-          # styles.xml
-          # --------------------------------------------------------
-          cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-
-    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:navigationBarColor">#101318</item>
-        <item name="android:statusBarColor">#101318</item>
-        <item name="android:windowLightStatusBar">false</item>
-    </style>
-
-</resources>
-EOF
-
-
-          # --------------------------------------------------------
-          # MainActivity.java
-          # --------------------------------------------------------
-          cat > questmate-build/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-package com.questmate.app;
-
-import android.app.Activity;
-import android.os.Bundle;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.widget.Toast;
-
-import java.util.ArrayList;
-import java.util.List;
-
-public class MainActivity extends Activity {
-
-    private LinearLayout questList;
-    private EditText searchBox;
-
-    private final List<Quest> quests = new ArrayList<>();
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        loadQuests();
-        buildMainScreen();
-    }
-
-    private void loadQuests() {
-
-        quests.add(new Quest(
-                "Cook's Assistant",
-                "F2P",
-                "Novice",
-                "Short",
-                "1",
-                "Lumbridge Castle",
-                "Bucket, Pot, Egg, Milk, Grain",
-                new String[]{
-                        "Speak to the Cook in the kitchen of Lumbridge Castle.",
-                        "Obtain a bucket of milk.",
-                        "Obtain an egg.",
-                        "Obtain some grain.",
-                        "Use the grain on the hopper in the Lumbridge windmill.",
-                        "Collect the flour.",
-                        "Return to the Cook with the ingredients.",
-                        "Quest complete."
-                }
-        ));
-
-        quests.add(new Quest(
-                "Demon Slayer",
-                "F2P",
-                "Novice",
-                "Short",
-                "3",
-                "Varrock",
-                "Bucket of water, 2 coins",
-                new String[]{
-                        "Speak to Gypsy Aris in Varrock.",
-                        "Learn about Silverlight.",
-                        "Speak to Sir Prysin in Varrock Castle.",
-                        "Collect the three keys needed for Silverlight.",
-                        "Return the keys to Sir Prysin.",
-                        "Obtain Silverlight.",
-                        "Travel to the demon's location.",
-                        "Defeat the demon.",
-                        "Quest complete."
-                }
-        ));
-
-        quests.add(new Quest(
-                "Dragon Slayer I",
-                "F2P",
-                "Experienced",
-                "Long",
-                "18",
-                "Champions' Guild",
-                "Anti-dragon shield, food, combat equipment",
-                new String[]{
-                        "Speak to the Guildmaster in the Champions' Guild.",
-                        "Speak to Oziach north-west of Edgeville.",
-                        "Gather the items required for the quest.",
-                        "Travel to Crandor.",
-                        "Enter the dragon's lair.",
-                        "Prepare your combat equipment and food.",
-                        "Defeat Elvarg.",
-                        "Return to Oziach.",
-                        "Quest complete."
-                }
-        ));
-
-        quests.add(new Quest(
-                "The Restless Ghost",
-                "F2P",
-                "Novice",
-                "Short",
-                "1",
-                "Lumbridge Church",
-                "Ghostspeak amulet",
-                new String[]{
-                        "Speak to Father Aereck in Lumbridge.",
-                        "Speak to Father Urhney.",
-                        "Receive the Ghostspeak amulet.",
-                        "Return to the ghost's location.",
-                        "Investigate the ghost's problem.",
-                        "Find the skull.",
-                        "Return the skull to the ghost.",
-                        "Quest complete."
-                }
-        ));
-
-        quests.add(new Quest(
-                "Romeo & Juliet",
-                "F2P",
-                "Novice",
-                "Short",
-                "5",
-                "Varrock",
-                "Cadava berries",
-                new String[]{
-                        "Speak to Romeo in Varrock.",
-                        "Speak to Juliet.",
-                        "Speak to Father Lawrence.",
-                        "Obtain cadava berries.",
-                        "Give the berries to the apothecary.",
-                        "Return the potion to Juliet.",
-                        "Speak to Romeo.",
-                        "Quest complete."
-                }
-        ));
-
-        quests.add(new Quest(
-                "Vampire Slayer",
-                "F2P",
-                "Novice",
-                "Short",
-                "3",
-                "Draynor Village",
-                "Hammer, garlic, stake",
-                new String[]{
-                        "Speak to Morgan in Draynor Village.",
-                        "Search Morgan's house for garlic.",
-                        "Speak to Dr Harlow in the Blue Moon Inn.",
-                        "Obtain a stake and hammer.",
-                        "Travel to Draynor Manor.",
-                        "Enter the vampire's room.",
-                        "Defeat Count Draynor.",
-                        "Quest complete."
-                }
-        ));
-    }
-
-    private void buildMainScreen() {
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(16, 19, 24));
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(20, 20, 20, 20);
-
-        TextView title = new TextView(this);
-        title.setText("QuestMate");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(26);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-        header.addView(
-                title,
-                new LinearLayout.LayoutParams(
-                        0,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        1
-                )
-        );
-
-        Button minimize = new Button(this);
-        minimize.setText("MINIMIZE");
-        minimize.setOnClickListener(v -> moveTaskToBack(true));
-
-        header.addView(
-                minimize,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
-
-        root.addView(header);
-
-
-        searchBox = new EditText(this);
-        searchBox.setHint("Search quests...");
-        searchBox.setSingleLine(true);
-        searchBox.setTextColor(Color.WHITE);
-        searchBox.setHintTextColor(Color.LTGRAY);
-        searchBox.setPadding(20, 10, 20, 10);
-
-        root.addView(
-                searchBox,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
-
-
-        LinearLayout filters = new LinearLayout(this);
-        filters.setOrientation(LinearLayout.HORIZONTAL);
-        filters.setGravity(Gravity.CENTER);
-        filters.setPadding(10, 10, 10, 10);
-
-        Button allButton = new Button(this);
-        allButton.setText("ALL");
-
-        Button f2pButton = new Button(this);
-        f2pButton.setText("F2P");
-
-        Button membersButton = new Button(this);
-        membersButton.setText("MEMBERS");
-
-        filters.addView(
-                allButton,
-                new LinearLayout.LayoutParams(0, 50, 1)
-        );
-
-        filters.addView(
-                f2pButton,
-                new LinearLayout.LayoutParams(0, 50, 1)
-        );
-
-        filters.addView(
-                membersButton,
-                new LinearLayout.LayoutParams(0, 50, 1)
-        );
-
-        root.addView(filters);
-
-
-        ScrollView scroll = new ScrollView(this);
-
-        questList = new LinearLayout(this);
-        questList.setOrientation(LinearLayout.VERTICAL);
-        questList.setPadding(12, 5, 12, 30);
-
-        scroll.addView(questList);
-
-        root.addView(
-                scroll,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0,
-                        1
-                )
-        );
-
-        setContentView(root);
-
-        allButton.setOnClickListener(v -> showQuests("ALL"));
-        f2pButton.setOnClickListener(v -> showQuests("F2P"));
-        membersButton.setOnClickListener(v -> showQuests("MEMBERS"));
-
-        searchBox.setOnEditorActionListener((v, actionId, event) -> {
-            showQuests("ALL");
-            return false;
-        });
-
-        showQuests("ALL");
-    }
-
-    private void showQuests(String filter) {
-
-        questList.removeAllViews();
-
-        String search = searchBox.getText().toString().trim().toLowerCase();
-
-        for (Quest quest : quests) {
-
-            boolean matchesFilter =
-                    filter.equals("ALL")
-                            || quest.type.equals(filter);
-
-            boolean matchesSearch =
-                    search.isEmpty()
-                            || quest.name.toLowerCase().contains(search);
-
-            if (matchesFilter && matchesSearch) {
-                addQuestButton(quest);
-            }
-        }
-
-        if (questList.getChildCount() == 0) {
-
-            TextView empty = new TextView(this);
-            empty.setText("No quests found.");
-            empty.setTextColor(Color.WHITE);
-            empty.setTextSize(18);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(20, 40, 20, 40);
-
-            questList.addView(empty);
-        }
-    }
-
-    private void addQuestButton(Quest quest) {
-
-        Button button = new Button(this);
-
-        button.setText(
-                quest.name
-                        + "\n"
-                        + quest.type
-                        + " • "
-                        + quest.difficulty
-                        + " • "
-                        + quest.length
-                        + " • "
-                        + quest.questPoints
-                        + " QP"
-        );
-
-        button.setTextSize(15);
-        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
-
-        button.setOnClickListener(v -> showQuestDetails(quest));
-
-        questList.addView(
-                button,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
-    }
-
-    private void showQuestDetails(Quest quest) {
-
-        ScrollView scroll = new ScrollView(this);
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(25, 25, 25, 40);
-        layout.setBackgroundColor(Color.rgb(16, 19, 24));
-
-        TextView title = new TextView(this);
-        title.setText(quest.name);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(28);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-        layout.addView(title);
-
-
-        TextView info = new TextView(this);
-
-        info.setText(
-                "\nType: " + quest.type
-                        + "\nDifficulty: " + quest.difficulty
-                        + "\nLength: " + quest.length
-                        + "\nQuest Points: " + quest.questPoints
-                        + "\nStart: " + quest.start
-                        + "\n\nItems:\n" + quest.items
-        );
-
-        info.setTextColor(Color.WHITE);
-        info.setTextSize(17);
-
-        layout.addView(info);
-
-
-        TextView stepsTitle = new TextView(this);
-        stepsTitle.setText("\nQUEST STEPS");
-        stepsTitle.setTextColor(Color.WHITE);
-        stepsTitle.setTextSize(21);
-        stepsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-        layout.addView(stepsTitle);
-
-
-        for (int i = 0; i < quest.steps.length; i++) {
-
-            android.widget.CheckBox checkBox =
-                    new android.widget.CheckBox(this);
-
-            checkBox.setText(
-                    (i + 1)
-                            + ". "
-                            + quest.steps[i]
-            );
-
-            checkBox.setTextColor(Color.WHITE);
-            checkBox.setTextSize(16);
-
-            layout.addView(checkBox);
-        }
-
-
-        Button back = new Button(this);
-        back.setText("BACK TO QUEST LIST");
-
-        back.setOnClickListener(v -> buildMainScreen());
-
-        layout.addView(back);
-
-
-        Button complete = new Button(this);
-        complete.setText("MARK QUEST COMPLETE");
-
-        complete.setOnClickListener(v ->
-                Toast.makeText(
-                        this,
-                        quest.name + " marked complete!",
-                        Toast.LENGTH_SHORT
-                ).show()
-        );
-
-        layout.addView(complete);
-
-
-        scroll.addView(layout);
-        setContentView(scroll);
-    }
-
-
-    private static class Quest {
-
-        String name;
-        String type;
-        String difficulty;
-        String length;
-        String questPoints;
-        String start;
-        String items;
-        String[] steps;
-
-        Quest(
-                String name,
-                String type,
-                String difficulty,
-                String length,
-                String questPoints,
-                String start,
-                String items,
-                String[] steps
-        ) {
-            this.name = name;
-            this.type = type;
-            this.difficulty = difficulty;
-            this.length = length;
-            this.questPoints = questPoints;
-            this.start = start;
-            this.items = items;
-            this.steps = steps;
-        }
-    }
-}
-EOF
-
-
-      # ------------------------------------------------------------
-      # 6. INSTALL GRADLE 8.9
-      # ------------------------------------------------------------
-      - name: Install Gradle 8.9
-        shell: bash
+      - name: Install Gradle
         run: |
-          set -e
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-       
+      - name: Build APK
+        run: |
+          cd questmate
+          gradle clean assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+          cp questmate/app/build/outputs/apk/debug/app-debug.apk dist/QuestMate.apk
+          ls -lh dist/QuestMate.apk
+
+      - name: Upload QuestMate APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-APK
+          path: dist/QuestMate.apk
+          if-no-files-found: error
+          retention-days: 30
