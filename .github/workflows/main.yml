@@ -6,24 +6,20 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
-    name: Build QuestMate
+    name: Build QuestMate APK
     runs-on: ubuntu-latest
 
     steps:
 
-      # ==========================================
-      # CHECKOUT
-      # ==========================================
-
       - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # JAVA
-      # ==========================================
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -32,12 +28,9 @@ jobs:
           java-version: '17'
 
 
-      # ==========================================
-      # ANDROID
-      # ==========================================
-
-      - name: Set up Android
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+
 
       - name: Install Android SDK
         run: |
@@ -47,11 +40,7 @@ jobs:
           sdkmanager "build-tools;35.0.0"
 
 
-      # ==========================================
-      # CREATE PROJECT
-      # ==========================================
-
-      - name: Create project
+      - name: Create QuestMate folders
         run: |
           rm -rf questmate-build
           rm -f QuestMate.apk
@@ -60,10 +49,6 @@ jobs:
           mkdir -p questmate-build/app/src/main/res/values
           mkdir -p questmate-build/app/src/main/assets
 
-
-      # ==========================================
-      # SETTINGS
-      # ==========================================
 
       - name: Create settings.gradle
         run: |
@@ -78,6 +63,7 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
               repositories {
                   google()
                   mavenCentral()
@@ -90,11 +76,7 @@ jobs:
           EOF
 
 
-      # ==========================================
-      # ROOT GRADLE
-      # ==========================================
-
-      - name: Create build.gradle
+      - name: Create root build.gradle
         run: |
           cat > questmate-build/build.gradle <<'EOF'
           buildscript {
@@ -117,10 +99,6 @@ jobs:
           EOF
 
 
-      # ==========================================
-      # GRADLE PROPERTIES
-      # ==========================================
-
       - name: Create gradle.properties
         run: |
           cat > questmate-build/gradle.properties <<'EOF'
@@ -129,10 +107,6 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-
-      # ==========================================
-      # APP GRADLE
-      # ==========================================
 
       - name: Create app build.gradle
         run: |
@@ -164,11 +138,6 @@ jobs:
           }
           EOF
 
-
-      # ==========================================
-      # MANIFEST
-      # NO OVERLAY
-      # ==========================================
 
       - name: Create AndroidManifest.xml
         run: |
@@ -209,11 +178,7 @@ jobs:
           EOF
 
 
-      # ==========================================
-      # THEME
-      # ==========================================
-
-      - name: Create theme
+      - name: Create app theme
         run: |
           cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -230,11 +195,11 @@ jobs:
                       #00C853
                   </item>
 
-                  <item name="android:navigationBarColor">
+                  <item name="android:statusBarColor">
                       #101010
                   </item>
 
-                  <item name="android:statusBarColor">
+                  <item name="android:navigationBarColor">
                       #101010
                   </item>
 
@@ -244,96 +209,12 @@ jobs:
           EOF
 
 
-      # ==========================================
-      # QUEST DATABASE
-      # ==========================================
-
       - name: Create quest database
         run: |
           python3 - <<'PY'
           import json
-          import urllib.parse
-          import urllib.request
 
-          API = "https://oldschool.runescape.wiki/api.php"
-
-          quests = []
-          seen = set()
-          token = None
-
-          while True:
-
-              params = {
-                  "action": "query",
-                  "list": "categorymembers",
-                  "cmtitle": "Category:Quests",
-                  "cmnamespace": "0",
-                  "cmlimit": "500",
-                  "format": "json"
-              }
-
-              if token:
-                  params["cmcontinue"] = token
-
-              url = API + "?" + urllib.parse.urlencode(params)
-
-              request = urllib.request.Request(
-                  url,
-                  headers={
-                      "User-Agent": "QuestMate/1.0"
-                  }
-              )
-
-              with urllib.request.urlopen(
-                  request,
-                  timeout=60
-              ) as response:
-
-                  data = json.load(response)
-
-              for item in data.get(
-                  "query",
-                  {}
-              ).get(
-                  "categorymembers",
-                  []
-              ):
-
-                  name = item.get(
-                      "title",
-                      ""
-                  ).strip()
-
-                  if name and name not in seen:
-
-                      seen.add(name)
-
-                      quests.append({
-                          "name": name,
-                          "members": True,
-                          "difficulty": "Not listed",
-                          "length": "Not listed",
-                          "questPoints": 0,
-                          "start": "Not listed",
-                          "guide": [
-                              "Prepare for this quest.",
-                              "Check your requirements.",
-                              "Gather the required items.",
-                              "Begin the quest.",
-                              "Follow the QuestMate checklist.",
-                              "Complete the final objective.",
-                              "Finish the quest."
-                          ]
-                      })
-
-              if "continue" not in data:
-                  break
-
-              token = data[
-                  "continue"
-              ]["cmcontinue"]
-
-          f2p = {
+          quests = [
               "Black Knights' Fortress",
               "Below Ice Mountain",
               "Cook's Assistant",
@@ -355,51 +236,46 @@ jobs:
               "Vampire Slayer",
               "The Corsair Curse",
               "X Marks the Spot"
-          }
+          ]
 
-          for quest in quests:
+          data = []
 
-              if quest["name"] in f2p:
-                  quest["members"] = False
-
-          quests.sort(
-              key=lambda x: x["name"].lower()
-          )
-
-          output = (
-              "questmate-build/"
-              "app/src/main/assets/quests.json"
-          )
+          for name in quests:
+              data.append({
+                  "name": name,
+                  "members": False,
+                  "difficulty": "Quest guide",
+                  "length": "Varies",
+                  "questPoints": 0,
+                  "start": "See QuestMate guide",
+                  "guide": [
+                      "Check your requirements.",
+                      "Prepare your required items.",
+                      "Travel to the quest starting area.",
+                      "Speak to the required NPC.",
+                      "Follow the QuestMate instructions.",
+                      "Complete the required objectives.",
+                      "Finish the quest.",
+                      "Mark the quest complete."
+                  ]
+              })
 
           with open(
-              output,
+              "questmate-build/app/src/main/assets/quests.json",
               "w",
               encoding="utf-8"
-          ) as file:
-
+          ) as f:
               json.dump(
-                  quests,
-                  file,
+                  data,
+                  f,
                   ensure_ascii=False,
                   indent=2
               )
 
-          print(
-              "QUESTS FOUND:",
-              len(quests)
-          )
-
-          print(
-              "DATABASE CREATED:"
-          )
-
-          print(output)
+          print("Quest database created.")
+          print("Quest count:", len(data))
           PY
 
-
-      # ==========================================
-      # MAIN ACTIVITY
-      # ==========================================
 
       - name: Create MainActivity
         run: |
@@ -410,7 +286,6 @@ jobs:
           import android.os.Bundle;
           import android.graphics.Color;
           import android.view.Gravity;
-          import android.view.ViewGroup;
           import android.widget.Button;
           import android.widget.CheckBox;
           import android.widget.EditText;
@@ -422,7 +297,6 @@ jobs:
           import org.json.JSONObject;
 
           import java.io.BufferedReader;
-          import java.io.InputStream;
           import java.io.InputStreamReader;
           import java.util.ArrayList;
           import java.util.List;
@@ -434,12 +308,8 @@ jobs:
               private final List<Quest> quests =
                       new ArrayList<>();
 
-              private String filter = "ALL";
-
               @Override
-              protected void onCreate(
-                      Bundle savedInstanceState
-              ) {
+              protected void onCreate(Bundle savedInstanceState) {
 
                   super.onCreate(savedInstanceState);
 
@@ -459,7 +329,10 @@ jobs:
                   );
 
                   root.setPadding(
-                          16,16,16,16
+                          16,
+                          16,
+                          16,
+                          16
                   );
 
                   root.setBackgroundColor(
@@ -512,11 +385,34 @@ jobs:
                           v -> moveTaskToBack(true)
                   );
 
+
                   header.addView(
                           minimize
                   );
 
-                  root.addView(header);
+                  root.addView(
+                          header
+                  );
+
+
+                  TextView subtitle =
+                          new TextView(this);
+
+                  subtitle.setText(
+                          "OSRS Quest Guide"
+                  );
+
+                  subtitle.setTextColor(
+                          Color.LTGRAY
+                  );
+
+                  subtitle.setTextSize(
+                          16
+                  );
+
+                  root.addView(
+                          subtitle
+                  );
 
 
                   EditText search =
@@ -537,54 +433,6 @@ jobs:
                   root.addView(
                           search
                   );
-
-
-                  LinearLayout filters =
-                          new LinearLayout(this);
-
-
-                  String[] filtersList = {
-                          "ALL",
-                          "F2P",
-                          "MEMBERS"
-                  };
-
-
-                  for (
-                          String name :
-                          filtersList
-                  ) {
-
-                      Button button =
-                              new Button(this);
-
-                      button.setText(name);
-
-                      button.setOnClickListener(
-                              v -> {
-
-                                  filter = name;
-
-                                  refresh(
-                                      search
-                                      .getText()
-                                      .toString()
-                                  );
-                              }
-                      );
-
-                      filters.addView(
-                              button,
-                              new LinearLayout.LayoutParams(
-                                      0,
-                                      60,
-                                      1
-                              )
-                      );
-                  }
-
-
-                  root.addView(filters);
 
 
                   ScrollView scroll =
@@ -621,24 +469,23 @@ jobs:
                                       CharSequence s,
                                       int start,
                                       int count,
-                                      int after
-                              ) {}
+                                      int after) {
+                              }
 
                               public void onTextChanged(
                                       CharSequence s,
                                       int start,
                                       int before,
-                                      int count
-                              ) {
+                                      int count) {
 
                                   refresh(
-                                      s.toString()
+                                          s.toString()
                                   );
                               }
 
                               public void afterTextChanged(
-                                      android.text.Editable e
-                              ) {}
+                                      android.text.Editable e) {
+                              }
                           }
                   );
 
@@ -663,37 +510,15 @@ jobs:
 
                   for (Quest quest : quests) {
 
-                      boolean correctFilter =
-
-                              filter.equals("ALL")
-
-                              ||
-
-                              (
-                                  filter.equals("F2P")
-                                  && !quest.members
-                              )
-
-                              ||
-
-                              (
-                                  filter.equals("MEMBERS")
-                                  && quest.members
-                              );
-
-
-                      if (!correctFilter)
-                          continue;
-
-
                       if (
                           !search.isEmpty()
                           &&
                           !quest.name
                               .toLowerCase()
                               .contains(search)
-                      )
+                      ) {
                           continue;
+                      }
 
 
                       Button button =
@@ -701,14 +526,7 @@ jobs:
 
                       button.setText(
                               quest.name
-                              +
-                              "\n"
-                              +
-                              (
-                                  quest.members
-                                  ? "MEMBERS"
-                                  : "F2P"
-                              )
+                              + "\nF2P"
                       );
 
 
@@ -740,7 +558,10 @@ jobs:
                   );
 
                   root.setPadding(
-                          16,16,16,16
+                          16,
+                          16,
+                          16,
+                          16
                   );
 
                   root.setBackgroundColor(
@@ -753,4 +574,198 @@ jobs:
 
 
                   Button back =
-   
+                          new Button(this);
+
+                  back.setText(
+                          "BACK"
+                  );
+
+                  back.setOnClickListener(
+                          v -> showHome()
+                  );
+
+
+                  top.addView(
+                          back
+                  );
+
+
+                  Button minimize =
+                          new Button(this);
+
+                  minimize.setText(
+                          "MINIMIZE"
+                  );
+
+                  minimize.setOnClickListener(
+                          v -> moveTaskToBack(true)
+                  );
+
+
+                  top.addView(
+                          minimize
+                  );
+
+
+                  root.addView(
+                          top
+                  );
+
+
+                  TextView title =
+                          new TextView(this);
+
+                  title.setText(
+                          quest.name
+                  );
+
+                  title.setTextColor(
+                          Color.WHITE
+                  );
+
+                  title.setTextSize(
+                          25
+                  );
+
+
+                  root.addView(
+                          title
+                  );
+
+
+                  TextView details =
+                          new TextView(this);
+
+                  details.setTextColor(
+                          Color.LTGRAY
+                  );
+
+                  details.setTextSize(
+                          16
+                  );
+
+                  details.setText(
+                          "\nDifficulty: "
+                          + quest.difficulty
+                          + "\n\nLength: "
+                          + quest.length
+                          + "\n\nQuest points: "
+                          + quest.questPoints
+                          + "\n\nStart: "
+                          + quest.start
+                  );
+
+
+                  root.addView(
+                          details
+                  );
+
+
+                  TextView guideTitle =
+                          new TextView(this);
+
+                  guideTitle.setText(
+                          "\nQUESTMATE GUIDE"
+                  );
+
+                  guideTitle.setTextColor(
+                          Color.WHITE
+                  );
+
+                  guideTitle.setTextSize(
+                          21
+                  );
+
+
+                  root.addView(
+                          guideTitle
+                  );
+
+
+                  ScrollView guideScroll =
+                          new ScrollView(this);
+
+
+                  LinearLayout guide =
+                          new LinearLayout(this);
+
+                  guide.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
+
+                  for (
+                          int i = 0;
+                          i < quest.guide.size();
+                          i++
+                  ) {
+
+                      CheckBox check =
+                              new CheckBox(this);
+
+                      check.setText(
+                              (i + 1)
+                              + ". "
+                              + quest.guide.get(i)
+                      );
+
+                      check.setTextColor(
+                              Color.WHITE
+                      );
+
+
+                      String key =
+                              "quest_"
+                              + quest.name
+                              + "_"
+                              + i;
+
+
+                      check.setChecked(
+                              getPreferences(
+                                      MODE_PRIVATE
+                              ).getBoolean(
+                                      key,
+                                      false
+                              )
+                      );
+
+
+                      check.setOnCheckedChangeListener(
+                              (button, checked) -> {
+
+                                  getPreferences(
+                                      MODE_PRIVATE
+                                  )
+                                  .edit()
+                                  .putBoolean(
+                                      key,
+                                      checked
+                                  )
+                                  .apply();
+                              }
+                      );
+
+
+                      guide.addView(
+                              check
+                      );
+                  }
+
+
+                  guideScroll.addView(
+                          guide
+                  );
+
+
+                  root.addView(
+                          guideScroll,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  0,
+                                  1
+                          )
+                  );
+
+
+                  setContentView(roo
