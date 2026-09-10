@@ -36,7 +36,7 @@ jobs:
 
 
       # ============================================================
-      # ANDROID SDK
+      # ANDROID
       # ============================================================
 
       - name: Set up Android SDK
@@ -48,137 +48,199 @@ jobs:
 
 
       # ============================================================
-      # DOWNLOAD QUEST HELPER
+      # DOWNLOAD OPEN-SOURCE QUEST HELPER
       # ============================================================
 
       - name: Download Quest Helper
         run: |
           git clone --depth 1 \
             https://github.com/Zoinkwiz/quest-helper.git \
-            quest-helper-source
+            quest-helper
 
-          mkdir -p appdata
-
-          cp quest-helper-source/LICENSE \
-            appdata/QUEST_HELPER_LICENSE.txt
+          test -f quest-helper/LICENSE
 
 
       # ============================================================
       # DOWNLOAD CURRENT RUNELITE QUEST LIST
       # ============================================================
 
-      - name: Download RuneLite quest list
+      - name: Download current quest list
         run: |
+          mkdir -p generated
+
           curl -L \
             https://raw.githubusercontent.com/runelite/runelite/master/runelite-api/src/main/java/net/runelite/api/Quest.java \
-            -o appdata/Quest.java
+            -o generated/Quest.java
+
+          test -s generated/Quest.java
 
 
       # ============================================================
       # GENERATE QUEST DATABASE
       # ============================================================
 
-      - name: Generate quest database
+      - name: Generate QuestMate quest database
         run: |
 
-          cat > generate_quests.py <<'PY'
+          cat > generate_quests.py <<'PYTHON'
+
           import os
           import re
           import json
 
-          QUEST_FILE = "appdata/Quest.java"
-          HELPER_ROOT = "quest-helper-source/src/main/java/com/questhelper/helpers/quests"
-          OUTPUT = "appdata/quests.json"
+          QUEST_FILE = "generated/Quest.java"
 
-          def normalize(value):
-              return re.sub(r"[^a-z0-9]", "", value.lower())
-
-          # --------------------------------------------------------
-          # READ QUEST NAMES FROM CURRENT RUNELITE
-          # --------------------------------------------------------
-
-          with open(QUEST_FILE, "r", encoding="utf-8") as f:
-              source = f.read()
-
-          quests = []
-
-          pattern = re.compile(
-              r"\b([A-Z0-9_]+)\s*\(\s*\"([^\"]+)\""
+          HELPER_ROOT = (
+              "quest-helper/src/main/java/"
+              "com/questhelper/helpers/quests"
           )
 
-          for enum_name, title in pattern.findall(source):
+          OUTPUT = "generated/quests.json"
 
-              if title in ("None", "Unknown"):
+
+          # ----------------------------------------------------------
+          # NORMALISE NAMES
+          # ----------------------------------------------------------
+
+          def normalise(value):
+
+              return re.sub(
+                  r"[^a-z0-9]",
+                  "",
+                  value.lower()
+              )
+
+
+          # ----------------------------------------------------------
+          # READ RUNELITE QUEST LIST
+          # ----------------------------------------------------------
+
+          with open(
+              QUEST_FILE,
+              "r",
+              encoding="utf-8"
+          ) as file:
+
+              quest_source = file.read()
+
+
+          quest_names = []
+
+          pattern = re.compile(
+              r"\b[A-Z0-9_]+\s*\(\s*\"([^\"]+)\""
+          )
+
+
+          for title in pattern.findall(
+              quest_source
+          ):
+
+              if title in (
+                  "None",
+                  "Unknown"
+              ):
                   continue
 
-              quests.append({
-                  "enum": enum_name,
-                  "title": title
-              })
-
-          unique = {}
-
-          for quest in quests:
-              unique[quest["title"]] = quest
-
-          quests = list(unique.values())
+              if title not in quest_names:
+                  quest_names.append(title)
 
 
-          # --------------------------------------------------------
-          # F2P QUESTS
-          # --------------------------------------------------------
+          print(
+              "Current RuneLite quest names:",
+              len(quest_names)
+          )
 
-          f2p = {
+
+          # ----------------------------------------------------------
+          # CURRENT F2P QUESTS
+          # ----------------------------------------------------------
+          #
+          # 24 F2P quests as of July 2026.
+          # ----------------------------------------------------------
+
+          F2P = {
+
               "Black Knights' Fortress",
+
               "Below Ice Mountain",
+
               "Cook's Assistant",
+
               "Demon Slayer",
+
               "Doric's Quest",
+
               "Dragon Slayer I",
+
               "Ernest the Chicken",
+
               "Goblin Diplomacy",
+
               "The Corsair Curse",
+
               "The Ides of Milk",
+
               "Imp Catcher",
+
+              "Learning the Ropes",
+
               "Misthalin Mystery",
+
               "Pirate's Treasure",
+
               "Prince Ali Rescue",
+
               "The Restless Ghost",
+
               "Romeo & Juliet",
+
               "Rune Mysteries",
+
               "Sheep Shearer",
+
               "Shield of Arrav",
+
               "The Knight's Sword",
+
               "Vampyre Slayer",
+
               "Witch's Potion",
+
               "X Marks the Spot"
           }
 
 
-          # --------------------------------------------------------
-          # FIND QUEST HELPER JAVA FILES
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
+          # FIND QUEST HELPER FILES
+          # ----------------------------------------------------------
 
           helper_files = []
 
-          for root, dirs, files in os.walk(HELPER_ROOT):
+          for root, dirs, files in os.walk(
+              HELPER_ROOT
+          ):
 
               for filename in files:
 
                   if filename.endswith(".java"):
+
                       helper_files.append(
-                          os.path.join(root, filename)
+                          os.path.join(
+                              root,
+                              filename
+                          )
                       )
 
+
           print(
-              "Quest Helper Java files found:",
+              "Quest Helper Java files:",
               len(helper_files)
           )
 
 
-          # --------------------------------------------------------
-          # MATCH HELPER CLASSES
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
+          # LOAD HELPER SOURCES
+          # ----------------------------------------------------------
 
           helpers = {}
 
@@ -190,274 +252,341 @@ jobs:
                       path,
                       "r",
                       encoding="utf-8"
-                  ) as f:
-                      text = f.read()
+                  ) as file:
 
-                  match = re.search(
-                      r"public\s+(?:final\s+)?class\s+([A-Za-z0-9_]+)",
-                      text
+                      source = file.read()
+
+
+                  class_match = re.search(
+                      r"(?:public\s+)?class\s+([A-Za-z0-9_]+)",
+                      source
                   )
 
-                  if not match:
+
+                  if not class_match:
                       continue
 
-                  class_name = match.group(1)
 
-                  helpers[normalize(class_name)] = {
-                      "source": text,
-                      "path": path
-                  }
+                  class_name =
+                  class_match.group(1)
+
+
+                  helpers[
+                      normalise(class_name)
+                  ] = source
+
 
               except Exception as error:
 
                   print(
-                      "Could not read:",
+                      "Helper read error:",
                       path,
                       error
                   )
 
 
-          # --------------------------------------------------------
-          # EXTRACT STRING VALUES
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
+          # EXTRACT READABLE STRINGS
+          # ----------------------------------------------------------
 
-          def strings_from(text):
+          def readable_strings(text):
 
-              return re.findall(
+              values = re.findall(
                   r'"((?:\\.|[^"\\])*)"',
                   text,
                   re.DOTALL
               )
 
+              result = []
 
-          def clean(value):
+              for value in values:
 
-              value = value.replace(
-                  "\\n",
-                  " "
-              )
+                  value = value.replace(
+                      "\\n",
+                      " "
+                  )
 
-              value = value.replace(
-                  "\\t",
-                  " "
-              )
+                  value = value.replace(
+                      "\\t",
+                      " "
+                  )
 
-              value = value.replace(
-                  '\\"',
-                  '"'
-              )
+                  value = value.replace(
+                      '\\"',
+                      '"'
+                  )
 
-              value = re.sub(
-                  r"\s+",
-                  " ",
-                  value
-              )
-
-              return value.strip()
+                  value = re.sub(
+                      r"\s+",
+                      " ",
+                      value
+                  ).strip()
 
 
-          # --------------------------------------------------------
-          # EXTRACT ITEM REQUIREMENTS
-          # --------------------------------------------------------
+                  if len(value) < 8:
+                      continue
 
-          def get_items(text):
 
-              found = []
+                  if value.startswith(
+                      (
+                          "ItemID.",
+                          "NpcID.",
+                          "ObjectID.",
+                          "WorldPoint",
+                          "TileObject"
+                      )
+                  ):
+                      continue
+
+
+                  # Ignore URLs.
+                  if value.startswith(
+                      (
+                          "http://",
+                          "https://"
+                      )
+                  ):
+                      continue
+
+
+                  if value not in result:
+
+                      result.append(value)
+
+
+              return result
+
+
+          # ----------------------------------------------------------
+          # EXTRACT ITEMS
+          # ----------------------------------------------------------
+
+          def get_items(source):
+
+              result = []
+
 
               patterns = [
-                  r'new\s+ItemRequirement\s*\(\s*"([^"]+)"',
-                  r'new\s+ItemRequirement\s*\(\s*"([^"]+)"\s*,',
-                  r'new\s+ItemRequirement\s*\(\s*ItemID\.([A-Z0-9_]+)'
+
+                  r'ItemRequirement\s*\(\s*"([^"]+)"',
+
+                  r'ItemRequirement\s*\(\s*ItemID\.([A-Z0-9_]+)'
               ]
+
 
               for pattern in patterns:
 
                   for value in re.findall(
                       pattern,
-                      text
+                      source
                   ):
 
-                      value = clean(value)
+                      if value not in result:
 
-                      if value and value not in found:
-                          found.append(value)
-
-              return found
+                          result.append(value)
 
 
-          # --------------------------------------------------------
+              return result
+
+
+          # ----------------------------------------------------------
           # EXTRACT SKILL REQUIREMENTS
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
 
-          def get_skills(text):
+          def get_skills(source):
 
-              found = []
+              result = []
+
 
               pattern = re.compile(
-                  r'new\s+SkillRequirement\s*\(\s*Skill\.([A-Z0-9_]+)\s*,\s*(\d+)'
+                  r"SkillRequirement\s*\("
+                  r"\s*Skill\.([A-Z0-9_]+)"
+                  r"\s*,\s*(\d+)"
               )
 
-              for skill, level in pattern.findall(text):
+
+              for skill, level in pattern.findall(
+                  source
+              ):
 
                   skill = skill.replace(
                       "_",
                       " "
                   ).title()
 
-                  value = f"{skill} {level}"
 
-                  if value not in found:
-                      found.append(value)
+                  value = (
+                      skill
+                      + " "
+                      + level
+                  )
 
-              return found
+
+                  if value not in result:
+
+                      result.append(value)
 
 
-          # --------------------------------------------------------
+              return result
+
+
+          # ----------------------------------------------------------
           # EXTRACT QUEST POINT REWARD
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
 
-          def get_qp(text):
+          def get_qp(source):
 
-              match = re.search(
-                  r'QuestPointReward\s*\(\s*(\d+)\s*\)',
-                  text
+              matches = re.findall(
+                  r"QuestPointReward\s*\(\s*(\d+)\s*\)",
+                  source
               )
 
-              if match:
-                  return int(match.group(1))
 
-              return 0
+              if not matches:
+
+                  return 0
 
 
-          # --------------------------------------------------------
-          # EXTRACT REWARD ITEM NAMES
-          # --------------------------------------------------------
+              return max(
+                  int(value)
+                  for value in matches
+              )
 
-          def get_rewards(text):
 
-              found = []
+          # ----------------------------------------------------------
+          # EXTRACT WALKTHROUGH STEPS
+          # ----------------------------------------------------------
 
-              patterns = [
-                  r'new\s+ItemReward\s*\(\s*"([^"]+)"',
-                  r'new\s+ItemReward\s*\(\s*"([^"]+)"\s*,'
+          def get_steps(source):
+
+              if not source:
+
+                  return []
+
+
+              strings = readable_strings(
+                  source
+              )
+
+
+              steps = []
+
+
+              # Prefer strings that look like
+              # instructions rather than names.
+              for value in strings:
+
+                  lower = value.lower()
+
+
+                  instruction_words = (
+
+                      "talk",
+                      "go",
+                      "travel",
+                      "use",
+                      "take",
+                      "get",
+                      "kill",
+                      "search",
+                      "open",
+                      "enter",
+                      "leave",
+                      "return",
+                      "speak",
+                      "give",
+                      "use",
+                      "equip",
+                      "wear",
+                      "mine",
+                      "fish",
+                      "cook",
+                      "smelt",
+                      "craft",
+                      "pick",
+                      "bank",
+                      "teleport",
+                      "climb",
+                      "follow",
+                      "start",
+                      "finish"
+                  )
+
+
+                  looks_like_step = any(
+                      word in lower
+                      for word in instruction_words
+                  )
+
+
+                  if looks_like_step:
+
+                      if value not in steps:
+
+                          steps.append(value)
+
+
+              # Limit obvious junk.
+              steps = [
+                  value
+                  for value in steps
+                  if len(value) <= 500
               ]
 
-              for pattern in patterns:
 
-                  for value in re.findall(
-                      pattern,
-                      text
-                  ):
-
-                      value = clean(value)
-
-                      if value and value not in found:
-                          found.append(value)
-
-              return found
+              return steps
 
 
-          # --------------------------------------------------------
-          # EXTRACT WALKTHROUGH TEXT
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
+          # GENERATE
+          # ----------------------------------------------------------
 
-          def get_walkthrough(text):
+          database = []
 
-              results = []
 
-              # Look for common Quest Helper step objects.
-              step_pattern = re.compile(
-                  r'new\s+[A-Za-z0-9_]*Step\s*\((.*?)\)',
-                  re.DOTALL
+          for title in quest_names:
+
+              source = helpers.get(
+                  normalise(title),
+                  ""
               )
 
-              for match in step_pattern.finditer(text):
 
-                  body = match.group(1)
-
-                  candidates = []
-
-                  for value in strings_from(body):
-
-                      value = clean(value)
-
-                      if len(value) < 8:
-                          continue
-
-                      # Ignore obvious technical values.
-                      if value.startswith(
-                          ("ItemID.", "NpcID.", "ObjectID.", "WorldPoint")
-                      ):
-                          continue
-
-                      candidates.append(value)
-
-                  if candidates:
-
-                      # Prefer the longest readable instruction.
-                      value = max(
-                          candidates,
-                          key=len
-                      )
-
-                      if value not in results:
-                          results.append(value)
-
-              return results
-
-
-          # --------------------------------------------------------
-          # GENERATE DATABASE
-          # --------------------------------------------------------
-
-          output = []
-
-          for quest in quests:
-
-              title = quest["title"]
-
-              helper = helpers.get(
-                  normalize(title)
+              steps = get_steps(
+                  source
               )
 
-              helper_source = ""
-
-              if helper:
-                  helper_source = helper["source"]
-
-              steps = get_walkthrough(
-                  helper_source
-              )
 
               items = get_items(
-                  helper_source
+                  source
               )
+
 
               skills = get_skills(
-                  helper_source
+                  source
               )
 
-              rewards = get_rewards(
-                  helper_source
-              )
 
               qp = get_qp(
-                  helper_source
+                  source
               )
 
-              # Create a useful fallback if a helper is not found.
+
+              # Always provide a usable quest page.
               if not steps:
 
                   steps = [
-                      "Open this quest in QuestMate and follow the requirements and items shown above."
+                      "Start this quest at its starting location "
+                      "and follow the quest objectives."
                   ]
 
-              output.append({
+
+              database.append({
 
                   "title": title,
 
                   "members": (
-                      title not in f2p
+                      title not in F2P
                   ),
 
                   "questPoints": qp,
@@ -466,48 +595,46 @@ jobs:
 
                   "items": items,
 
-                  "rewards": rewards,
-
                   "steps": steps
-
               })
 
 
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
           # SORT
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
 
-          output.sort(
-              key=lambda item:
-                  item["title"].lower()
+          database.sort(
+              key=lambda quest:
+                  quest["title"].lower()
           )
 
 
-          # --------------------------------------------------------
-          # WRITE JSON
-          # --------------------------------------------------------
+          # ----------------------------------------------------------
+          # WRITE DATABASE
+          # ----------------------------------------------------------
 
           os.makedirs(
-              "appdata",
+              "generated",
               exist_ok=True
           )
+
 
           with open(
               OUTPUT,
               "w",
               encoding="utf-8"
-          ) as f:
+          ) as file:
 
               json.dump(
-                  output,
-                  f,
+                  database,
+                  file,
                   ensure_ascii=False,
                   indent=2
               )
 
 
           print(
-              "===================================="
+              "=========================================="
           )
 
           print(
@@ -515,142 +642,185 @@ jobs:
           )
 
           print(
-              "Total quests:",
-              len(output)
+              "Total:",
+              len(database)
           )
 
           print(
-              "F2P quests:",
+              "F2P:",
               sum(
                   1
-                  for q in output
-                  if not q["members"]
+                  for quest in database
+                  if not quest["members"]
               )
           )
 
           print(
-              "Members quests:",
+              "Members:",
               sum(
                   1
-                  for q in output
-                  if q["members"]
+                  for quest in database
+                  if quest["members"]
               )
           )
 
           print(
-              "===================================="
-
+              "=========================================="
           )
-          PY
+
+          PYTHON
 
           python3 generate_quests.py
 
-          test -s appdata/quests.json
+          test -s generated/quests.json
 
-          ls -lh appdata/quests.json
+          cp \
+            generated/quests.json \
+            quest-helper/QUESTMATE_QUESTS.json
+
+          ls -lh \
+            generated/quests.json
 
 
       # ============================================================
       # CREATE ANDROID PROJECT
       # ============================================================
 
-      - name: Create project folders
+      - name: Create Android project
         run: |
 
           mkdir -p questmate/app/src/main/java/com/questmate/app
+
           mkdir -p questmate/app/src/main/res/values
+
           mkdir -p questmate/app/src/main/assets
 
-          cp appdata/quests.json \
+          cp \
+            generated/quests.json \
             questmate/app/src/main/assets/quests.json
 
-          cp appdata/QUEST_HELPER_LICENSE.txt \
+          cp \
+            quest-helper/LICENSE \
             questmate/app/src/main/assets/QUEST_HELPER_LICENSE.txt
 
 
       # ============================================================
-      # SETTINGS.GRADLE
+      # SETTINGS
       # ============================================================
 
       - name: Create settings.gradle
         run: |
 
           cat > questmate/settings.gradle <<'EOF'
+
           pluginManagement {
+
               repositories {
+
                   google()
+
                   mavenCentral()
+
                   gradlePluginPortal()
               }
           }
 
+
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+              repositoriesMode.set(
+                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
+              )
 
               repositories {
+
                   google()
+
                   mavenCentral()
               }
           }
 
-          rootProject.name = "QuestMate"
+
+          rootProject.name =
+              "QuestMate"
+
 
           include(":app")
+
           EOF
 
 
       # ============================================================
-      # BUILD.GRADLE
+      # ROOT GRADLE
       # ============================================================
 
       - name: Create build.gradle
         run: |
 
           cat > questmate/build.gradle <<'EOF'
+
           plugins {
-              id 'com.android.application' version '8.7.3' apply false
+
+              id 'com.android.application'
+                  version '8.7.3'
+                  apply false
           }
+
           EOF
 
 
       # ============================================================
-      # GRADLE.PROPERTIES
+      # GRADLE PROPERTIES
       # ============================================================
 
       - name: Create gradle.properties
         run: |
 
           cat > questmate/gradle.properties <<'EOF'
+
           android.useAndroidX=true
+
           android.enableJetifier=true
+
           EOF
 
 
       # ============================================================
-      # APP BUILD.GRADLE
+      # APP GRADLE
       # ============================================================
 
       - name: Create app build.gradle
         run: |
 
           cat > questmate/app/build.gradle <<'EOF'
+
           plugins {
+
               id 'com.android.application'
           }
 
+
           android {
+
               namespace 'com.questmate.app'
 
               compileSdk 35
 
+
               defaultConfig {
+
                   applicationId 'com.questmate.app'
+
                   minSdk 23
+
                   targetSdk 35
+
                   versionCode 1
+
                   versionName '1.0'
               }
           }
+
           EOF
 
 
@@ -662,13 +832,11 @@ jobs:
         run: |
 
           cat > questmate/app/src/main/AndroidManifest.xml <<'EOF'
+
           <?xml version="1.0" encoding="utf-8"?>
 
           <manifest
               xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-permission
-                  android:name="android.permission.INTERNET" />
 
               <application
                   android:theme="@style/AppTheme"
@@ -676,21 +844,21 @@ jobs:
                   android:allowBackup="false"
                   android:supportsRtl="true">
 
-                  <activity
-                      android:name=".PriceActivity"
-                      android:exported="false" />
 
                   <activity
                       android:name=".QuestDetailActivity"
                       android:exported="false" />
 
+
                   <activity
                       android:name=".QuestActivity"
                       android:exported="false" />
 
+
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
+
 
                       <intent-filter>
 
@@ -702,11 +870,14 @@ jobs:
 
                       </intent-filter>
 
+
                   </activity>
+
 
               </application>
 
           </manifest>
+
           EOF
 
 
@@ -717,1560 +888,4 @@ jobs:
       - name: Create styles.xml
         run: |
 
-          cat > questmate/app/src/main/res/values/styles.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-
-          <resources>
-
-              <style
-                  name="AppTheme"
-                  parent="android:style/Theme.Material.Light.NoActionBar">
-
-                  <item name="android:fontFamily">sans</item>
-
-                  <item name="android:colorAccent">#6750A4</item>
-
-                  <item name="android:navigationBarColor">#000000</item>
-
-              </style>
-
-          </resources>
-          EOF
-
-
-      # ============================================================
-      # MAIN ACTIVITY
-      # ============================================================
-
-      - name: Create MainActivity.java
-        run: |
-
-          cat > questmate/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Activity;
-          import android.content.Intent;
-          import android.os.Bundle;
-          import android.graphics.Typeface;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.LinearLayout;
-          import android.widget.TextView;
-
-          public class MainActivity extends Activity {
-
-              private int dp(int value) {
-                  return (int)(
-                      value *
-                      getResources()
-                          .getDisplayMetrics()
-                          .density
-                  );
-              }
-
-              private Button makeButton(
-                  String text
-              ) {
-
-                  Button button =
-                      new Button(this);
-
-                  button.setText(text);
-
-                  button.setTextSize(17);
-
-                  LinearLayout.LayoutParams params =
-                      new LinearLayout.LayoutParams(
-                          -1,
-                          dp(64)
-                      );
-
-                  params.setMargins(
-                      dp(16),
-                      dp(8),
-                      dp(16),
-                      dp(8)
-                  );
-
-                  button.setLayoutParams(params);
-
-                  return button;
-              }
-
-              @Override
-              protected void onCreate(
-                  Bundle state
-              ) {
-
-                  super.onCreate(state);
-
-                  LinearLayout root =
-                      new LinearLayout(this);
-
-                  root.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  TextView title =
-                      new TextView(this);
-
-                  title.setText(
-                      "QuestMate"
-                  );
-
-                  title.setTextSize(30);
-
-                  title.setTypeface(
-                      Typeface.DEFAULT,
-                      Typeface.BOLD
-                  );
-
-                  title.setGravity(
-                      Gravity.CENTER
-                  );
-
-                  title.setPadding(
-                      dp(16),
-                      dp(35),
-                      dp(16),
-                      dp(10)
-                  );
-
-                  root.addView(title);
-
-                  TextView subtitle =
-                      new TextView(this);
-
-                  subtitle.setText(
-                      "Old School RuneScape Quest Companion"
-                  );
-
-                  subtitle.setTextSize(16);
-
-                  subtitle.setGravity(
-                      Gravity.CENTER
-                  );
-
-                  subtitle.setPadding(
-                      dp(16),
-                      dp(5),
-                      dp(16),
-                      dp(30)
-                  );
-
-                  root.addView(subtitle);
-
-                  Button quests =
-                      makeButton(
-                          "OSRS QUESTS"
-                      );
-
-                  quests.setOnClickListener(
-                      view -> startActivity(
-                          new Intent(
-                              this,
-                              QuestActivity.class
-                          )
-                      )
-                  );
-
-                  root.addView(quests);
-
-                  Button prices =
-                      makeButton(
-                          "OSRS GRAND EXCHANGE PRICE CHECKER"
-                      );
-
-                  prices.setOnClickListener(
-                      view -> startActivity(
-                          new Intent(
-                              this,
-                              PriceActivity.class
-                          )
-                      )
-                  );
-
-                  root.addView(prices);
-
-                  TextView info =
-                      new TextView(this);
-
-                  info.setText(
-                      "QuestMate provides OSRS quest " +
-                      "walkthroughs, progress tracking " +
-                      "and live Grand Exchange prices."
-                  );
-
-                  info.setTextSize(15);
-
-                  info.setPadding(
-                      dp(20),
-                      dp(30),
-                      dp(20),
-                      dp(20)
-                  );
-
-                  root.addView(info);
-
-                  setContentView(root);
-              }
-          }
-          EOF
-
-
-      # ============================================================
-      # QUEST LIST ACTIVITY
-      # ============================================================
-
-      - name: Create QuestActivity.java
-        run: |
-
-          cat > questmate/app/src/main/java/com/questmate/app/QuestActivity.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Activity;
-          import android.content.Intent;
-          import android.os.Bundle;
-          import android.graphics.Typeface;
-          import android.text.Editable;
-          import android.text.TextWatcher;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.EditText;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-          import android.widget.Toast;
-
-          import org.json.JSONArray;
-          import org.json.JSONObject;
-
-          import java.io.InputStream;
-          import java.nio.charset.StandardCharsets;
-          import java.util.ArrayList;
-
-          public class QuestActivity extends Activity {
-
-              private final ArrayList<JSONObject> quests =
-                  new ArrayList<>();
-
-              private LinearLayout list;
-
-              private EditText search;
-
-              private String filter = "ALL";
-
-              private int dp(int value) {
-                  return (int)(
-                      value *
-                      getResources()
-                          .getDisplayMetrics()
-                          .density
-                  );
-              }
-
-              private String loadDatabase()
-                  throws Exception {
-
-                  InputStream input =
-                      getAssets().open(
-                          "quests.json"
-                      );
-
-                  byte[] data =
-                      new byte[input.available()];
-
-                  input.read(data);
-
-                  input.close();
-
-                  return new String(
-                      data,
-                      StandardCharsets.UTF_8
-                  );
-              }
-
-              private void loadQuests() {
-
-                  try {
-
-                      JSONArray data =
-                          new JSONArray(
-                              loadDatabase()
-                          );
-
-                      quests.clear();
-
-                      for (
-                          int i = 0;
-                          i < data.length();
-                          i++
-                      ) {
-
-                          quests.add(
-                              data.getJSONObject(i)
-                          );
-                      }
-
-                      display();
-
-                  } catch (Exception error) {
-
-                      Toast.makeText(
-                          this,
-                          "Could not load quests.",
-                          Toast.LENGTH_LONG
-                      ).show();
-                  }
-              }
-
-              private Button filterButton(
-                  String label,
-                  String value
-              ) {
-
-                  Button button =
-                      new Button(this);
-
-                  button.setText(label);
-
-                  button.setOnClickListener(
-                      view -> {
-
-                          filter = value;
-
-                          display();
-                      }
-                  );
-
-                  return button;
-              }
-
-              private void display() {
-
-                  if (list == null)
-                      return;
-
-                  list.removeAllViews();
-
-                  String query =
-                      search.getText()
-                          .toString()
-                          .trim()
-                          .toLowerCase();
-
-                  for (
-                      JSONObject quest : quests
-                  ) {
-
-                      try {
-
-                          String title =
-                              quest.getString(
-                                  "title"
-                              );
-
-                          boolean members =
-                              quest.getBoolean(
-                                  "members"
-                              );
-
-                          boolean correctFilter =
-                              filter.equals("ALL")
-                              ||
-                              (
-                                  filter.equals("F2P")
-                                  && !members
-                              )
-                              ||
-                              (
-                                  filter.equals("MEMBERS")
-                                  && members
-                              );
-
-                          boolean correctSearch =
-                              query.isEmpty()
-                              ||
-                              title.toLowerCase()
-                                  .contains(query);
-
-                          if (
-                              !correctFilter
-                              ||
-                              !correctSearch
-                          ) {
-                              continue;
-                          }
-
-                          Button button =
-                              new Button(this);
-
-                          button.setAllCaps(false);
-
-                          button.setGravity(
-                              Gravity.START
-                          );
-
-                          button.setText(
-                              title
-                              +
-                              (
-                                  members
-                                  ? "  • Members"
-                                  : "  • F2P"
-                              )
-                          );
-
-                          button.setTextSize(16);
-
-                          LinearLayout.LayoutParams params =
-                              new LinearLayout.LayoutParams(
-                                  -1,
-                                  dp(60)
-                              );
-
-                          params.setMargins(
-                              dp(8),
-                              dp(3),
-                              dp(8),
-                              dp(3)
-                          );
-
-                          button.setLayoutParams(
-                              params
-                          );
-
-                          button.setOnClickListener(
-                              view -> {
-
-                                  Intent intent =
-                                      new Intent(
-                                          this,
-                                          QuestDetailActivity.class
-                                      );
-
-                                  intent.putExtra(
-                                      "quest",
-                                      quest.toString()
-                                  );
-
-                                  startActivity(
-                                      intent
-                                  );
-                              }
-                          );
-
-                          list.addView(button);
-
-                      } catch (Exception ignored) {
-                      }
-                  }
-              }
-
-              @Override
-              protected void onCreate(
-                  Bundle state
-              ) {
-
-                  super.onCreate(state);
-
-                  LinearLayout root =
-                      new LinearLayout(this);
-
-                  root.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  TextView title =
-                      new TextView(this);
-
-                  title.setText(
-                      "OSRS Quests"
-                  );
-
-                  title.setTextSize(27);
-
-                  title.setTypeface(
-                      Typeface.DEFAULT,
-                      Typeface.BOLD
-                  );
-
-                  title.setPadding(
-                      dp(16),
-                      dp(20),
-                      dp(16),
-                      dp(10)
-                  );
-
-                  root.addView(title);
-
-                  search =
-                      new EditText(this);
-
-                  search.setHint(
-                      "Search quests..."
-                  );
-
-                  search.setSingleLine(true);
-
-                  root.addView(search);
-
-                  LinearLayout filters =
-                      new LinearLayout(this);
-
-                  filters.setOrientation(
-                      LinearLayout.HORIZONTAL
-                  );
-
-                  filters.addView(
-                      filterButton(
-                          "ALL",
-                          "ALL"
-                      ),
-                      new LinearLayout.LayoutParams(
-                          0,
-                          dp(55),
-                          1
-                      )
-                  );
-
-                  filters.addView(
-                      filterButton(
-                          "F2P",
-                          "F2P"
-                      ),
-                      new LinearLayout.LayoutParams(
-                          0,
-                          dp(55),
-                          1
-                      )
-                  );
-
-                  filters.addView(
-                      filterButton(
-                          "MEMBERS",
-                          "MEMBERS"
-                      ),
-                      new LinearLayout.LayoutParams(
-                          0,
-                          dp(55),
-                          1
-                      )
-                  );
-
-                  root.addView(filters);
-
-                  ScrollView scroll =
-                      new ScrollView(this);
-
-                  list =
-                      new LinearLayout(this);
-
-                  list.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  scroll.addView(list);
-
-                  root.addView(
-                      scroll,
-                      new LinearLayout.LayoutParams(
-                          -1,
-                          0,
-                          1
-                      )
-                  );
-
-                  search.addTextChangedListener(
-                      new TextWatcher() {
-
-                          @Override
-                          public void beforeTextChanged(
-                              CharSequence s,
-                              int start,
-                              int count,
-                              int after
-                          ) {
-                          }
-
-                          @Override
-                          public void onTextChanged(
-                              CharSequence s,
-                              int start,
-                              int before,
-                              int count
-                          ) {
-                              display();
-                          }
-
-                          @Override
-                          public void afterTextChanged(
-                              Editable s
-                          ) {
-                          }
-                      }
-                  );
-
-                  setContentView(root);
-
-                  loadQuests();
-              }
-          }
-          EOF
-
-
-      # ============================================================
-      # QUEST DETAIL ACTIVITY
-      # ============================================================
-
-      - name: Create QuestDetailActivity.java
-        run: |
-
-          cat > questmate/app/src/main/java/com/questmate/app/QuestDetailActivity.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.graphics.Typeface;
-          import android.view.ViewGroup;
-          import android.widget.CheckBox;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-
-          import android.content.SharedPreferences;
-
-          import org.json.JSONArray;
-          import org.json.JSONObject;
-
-          public class QuestDetailActivity extends Activity {
-
-              private JSONObject quest;
-
-              private LinearLayout content;
-
-              private SharedPreferences preferences;
-
-              private int dp(int value) {
-                  return (int)(
-                      value *
-                      getResources()
-                          .getDisplayMetrics()
-                          .density
-                  );
-              }
-
-              private TextView heading(
-                  String value
-              ) {
-
-                  TextView view =
-                      new TextView(this);
-
-                  view.setText(value);
-
-                  view.setTextSize(21);
-
-                  view.setTypeface(
-                      Typeface.DEFAULT,
-                      Typeface.BOLD
-                  );
-
-                  view.setPadding(
-                      dp(16),
-                      dp(18),
-                      dp(16),
-                      dp(8)
-                  );
-
-                  return view;
-              }
-
-              private TextView body(
-                  String value
-              ) {
-
-                  TextView view =
-                      new TextView(this);
-
-                  view.setText(value);
-
-                  view.setTextSize(16);
-
-                  view.setPadding(
-                      dp(18),
-                      dp(6),
-                      dp(18),
-                      dp(6)
-                  );
-
-                  return view;
-              }
-
-              private String arrayText(
-                  JSONArray array
-              ) {
-
-                  if (
-                      array == null
-                      ||
-                      array.length() == 0
-                  ) {
-                      return "None listed";
-                  }
-
-                  StringBuilder result =
-                      new StringBuilder();
-
-                  for (
-                      int i = 0;
-                      i < array.length();
-                      i++
-                  ) {
-
-                      if (i > 0)
-                          result.append("\n");
-
-                      result.append("• ")
-                          .append(
-                              array.optString(i)
-                          );
-                  }
-
-                  return result.toString();
-              }
-
-              private String progressKey(
-                  int index
-              ) {
-
-                  return "progress_"
-                      +
-                      quest.optString(
-                          "title"
-                      )
-                      .replaceAll(
-                          "[^A-Za-z0-9]",
-                          "_"
-                      )
-                      +
-                      "_"
-                      +
-                      index;
-              }
-
-              private void addStep(
-                  String step,
-                  int index
-              ) {
-
-                  CheckBox box =
-                      new CheckBox(this);
-
-                  box.setText(
-                      (index + 1)
-                      +
-                      ". "
-                      +
-                      step
-                  );
-
-                  box.setTextSize(16);
-
-                  box.setPadding(
-                      dp(12),
-                      dp(8),
-                      dp(12),
-                      dp(8)
-                  );
-
-                  String key =
-                      progressKey(index);
-
-                  box.setChecked(
-                      preferences.getBoolean(
-                          key,
-                          false
-                      )
-                  );
-
-                  box.setOnCheckedChangeListener(
-                      (button, checked) -> {
-
-                          preferences
-                              .edit()
-                              .putBoolean(
-                                  key,
-                                  checked
-                              )
-                              .apply();
-                      }
-                  );
-
-                  content.addView(
-                      box,
-                      new LinearLayout.LayoutParams(
-                          -1,
-                          ViewGroup.LayoutParams.WRAP_CONTENT
-                      )
-                  );
-              }
-
-              @Override
-              protected void onCreate(
-                  Bundle state
-              ) {
-
-                  super.onCreate(state);
-
-                  preferences =
-                      getSharedPreferences(
-                          "quest_progress",
-                          MODE_PRIVATE
-                      );
-
-                  try {
-
-                      quest =
-                          new JSONObject(
-                              getIntent()
-                                  .getStringExtra(
-                                      "quest"
-                                  )
-                          );
-
-                  } catch (Exception error) {
-
-                      finish();
-
-                      return;
-                  }
-
-                  ScrollView scroll =
-                      new ScrollView(this);
-
-                  content =
-                      new LinearLayout(this);
-
-                  content.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  String title =
-                      quest.optString(
-                          "title"
-                      );
-
-                  content.addView(
-                      heading(title)
-                  );
-
-                  String type =
-                      quest.optBoolean(
-                          "members"
-                      )
-                      ? "Members"
-                      : "Free-to-play";
-
-                  content.addView(
-                      body(
-                          type
-                          +
-                          "\nQuest Points: "
-                          +
-                          quest.optInt(
-                              "questPoints"
-                          )
-                      )
-                  );
-
-                  content.addView(
-                      heading(
-                          "Requirements"
-                      )
-                  );
-
-                  content.addView(
-                      body(
-                          arrayText(
-                              quest.optJSONArray(
-                                  "requirements"
-                              )
-                          )
-                      )
-                  );
-
-                  content.addView(
-                      heading(
-                          "Items"
-                      )
-                  );
-
-                  content.addView(
-                      body(
-                          arrayText(
-                              quest.optJSONArray(
-                                  "items"
-                              )
-                          )
-                      )
-                  );
-
-                  content.addView(
-                      heading(
-                          "Rewards"
-                      )
-                  );
-
-                  content.addView(
-                      body(
-                          arrayText(
-                              quest.optJSONArray(
-                                  "rewards"
-                              )
-                          )
-                      )
-                  );
-
-                  content.addView(
-                      heading(
-                          "Step-by-step walkthrough"
-                      )
-                  );
-
-                  JSONArray steps =
-                      quest.optJSONArray(
-                          "steps"
-                      );
-
-                  if (
-                      steps != null
-                      &&
-                      steps.length() > 0
-                  ) {
-
-                      for (
-                          int i = 0;
-                          i < steps.length();
-                          i++
-                      ) {
-
-                          addStep(
-                              steps.optString(i),
-                              i
-                          );
-                      }
-
-                  } else {
-
-                      content.addView(
-                          body(
-                              "No walkthrough steps are available."
-                          )
-                      );
-                  }
-
-                  content.addView(
-                      heading(
-                          "QuestMate source"
-                      )
-                  );
-
-                  content.addView(
-                      body(
-                          "Quest walkthrough information " +
-                          "is generated from the open-source " +
-                          "RuneLite Quest Helper project. " +
-                          "The Quest Helper licence is included " +
-                          "inside QuestMate."
-                      )
-                  );
-
-                  scroll.addView(content);
-
-                  setContentView(scroll);
-              }
-          }
-          EOF
-
-
-      # ============================================================
-      # PRICE CHECKER
-      # ============================================================
-
-      - name: Create PriceActivity.java
-        run: |
-
-          cat > questmate/app/src/main/java/com/questmate/app/PriceActivity.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.content.Intent;
-          import android.graphics.Typeface;
-          import android.net.Uri;
-          import android.widget.Button;
-          import android.widget.EditText;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-          import android.widget.Toast;
-
-          import org.json.JSONArray;
-          import org.json.JSONObject;
-
-          import java.io.BufferedReader;
-          import java.io.InputStreamReader;
-          import java.net.HttpURLConnection;
-          import java.net.URL;
-
-          public class PriceActivity extends Activity {
-
-              private EditText search;
-
-              private LinearLayout results;
-
-              private JSONArray mapping;
-
-              private JSONObject latest;
-
-              private int dp(int value) {
-                  return (int)(
-                      value *
-                      getResources()
-                          .getDisplayMetrics()
-                          .density
-                  );
-              }
-
-              private TextView text(
-                  String value,
-                  int size
-              ) {
-
-                  TextView view =
-                      new TextView(this);
-
-                  view.setText(value);
-
-                  view.setTextSize(size);
-
-                  view.setPadding(
-                      dp(16),
-                      dp(10),
-                      dp(16),
-                      dp(10)
-                  );
-
-                  return view;
-              }
-
-              @Override
-              protected void onCreate(
-                  Bundle state
-              ) {
-
-                  super.onCreate(state);
-
-                  LinearLayout root =
-                      new LinearLayout(this);
-
-                  root.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  TextView title =
-                      text(
-                          "OSRS Grand Exchange",
-                          27
-                      );
-
-                  title.setTypeface(
-                      Typeface.DEFAULT,
-                      Typeface.BOLD
-                  );
-
-                  root.addView(title);
-
-                  search =
-                      new EditText(this);
-
-                  search.setHint(
-                      "Search OSRS item..."
-                  );
-
-                  search.setSingleLine(true);
-
-                  root.addView(search);
-
-                  Button check =
-                      new Button(this);
-
-                  check.setText(
-                      "CHECK PRICE"
-                  );
-
-                  root.addView(check);
-
-                  Button tracker =
-                      new Button(this);
-
-                  tracker.setText(
-                      "OPEN LIVE PRICE TRACKER"
-                  );
-
-                  tracker.setOnClickListener(
-                      view -> {
-
-                          try {
-
-                              startActivity(
-                                  new Intent(
-                                      Intent.ACTION_VIEW,
-                                      Uri.parse(
-                                          "https://prices.runescape.wiki/"
-                                      )
-                                  )
-                              );
-
-                          } catch (Exception ignored) {
-                          }
-                      }
-                  );
-
-                  root.addView(tracker);
-
-                  ScrollView scroll =
-                      new ScrollView(this);
-
-                  results =
-                      new LinearLayout(this);
-
-                  results.setOrientation(
-                      LinearLayout.VERTICAL
-                  );
-
-                  scroll.addView(results);
-
-                  root.addView(
-                      scroll,
-                      new LinearLayout.LayoutParams(
-                          -1,
-                          0,
-                          1
-                      )
-                  );
-
-                  check.setOnClickListener(
-                      view -> searchItems()
-                  );
-
-                  setContentView(root);
-
-                  loadPrices();
-              }
-
-              private void loadPrices() {
-
-                  new Thread(() -> {
-
-                      try {
-
-                          String mappingData =
-                              download(
-                                  "https://prices.runescape.wiki/api/v1/osrs/mapping"
-                              );
-
-                          String latestData =
-                              download(
-                                  "https://prices.runescape.wiki/api/v1/osrs/latest"
-                              );
-
-                          JSONArray map =
-                              new JSONArray(
-                                  mappingData
-                              );
-
-                          JSONObject prices =
-                              new JSONObject(
-                                  latestData
-                              );
-
-                          runOnUiThread(() -> {
-
-                              mapping = map;
-
-                              latest = prices;
-
-                              Toast.makeText(
-                                  this,
-                                  "Live prices loaded",
-                                  Toast.LENGTH_SHORT
-                              ).show();
-                          });
-
-                      } catch (Exception error) {
-
-                          runOnUiThread(() ->
-
-                              Toast.makeText(
-                                  this,
-                                  "Could not load live prices.",
-                                  Toast.LENGTH_LONG
-                              ).show()
-                          );
-                      }
-
-                  }).start();
-              }
-
-              private String download(
-                  String address
-              ) throws Exception {
-
-                  URL url =
-                      new URL(address);
-
-                  HttpURLConnection connection =
-                      (HttpURLConnection)
-                      url.openConnection();
-
-                  connection.setRequestMethod(
-                      "GET"
-                  );
-
-                  connection.setConnectTimeout(
-                      15000
-                  );
-
-                  connection.setReadTimeout(
-                      15000
-                  );
-
-                  connection.setRequestProperty(
-                      "User-Agent",
-                      "QuestMate/1.0"
-                  );
-
-                  BufferedReader reader =
-                      new BufferedReader(
-                          new InputStreamReader(
-                              connection.getInputStream()
-                          )
-                      );
-
-                  StringBuilder result =
-                      new StringBuilder();
-
-                  String line;
-
-                  while (
-                      (line = reader.readLine())
-                      != null
-                  ) {
-
-                      result.append(line);
-                  }
-
-                  reader.close();
-
-                  connection.disconnect();
-
-                  return result.toString();
-              }
-
-              private void searchItems() {
-
-                  if (
-                      mapping == null
-                      ||
-                      latest == null
-                  ) {
-
-                      Toast.makeText(
-                          this,
-                          "Prices are still loading.",
-                          Toast.LENGTH_SHORT
-                      ).show();
-
-                      return;
-                  }
-
-                  String query =
-                      search.getText()
-                          .toString()
-                          .trim()
-                          .toLowerCase();
-
-                  results.removeAllViews();
-
-                  if (query.isEmpty())
-                      return;
-
-                  int found = 0;
-
-                  for (
-                      int i = 0;
-                      i < mapping.length()
-                      &&
-                      found < 20;
-                      i++
-                  ) {
-
-                      try {
-
-                          JSONObject item =
-                              mapping.getJSONObject(i);
-
-                          String name =
-                              item.optString(
-                                  "name"
-                              );
-
-                          if (
-                              !name
-                                  .toLowerCase()
-                                  .contains(query)
-                          ) {
-                              continue;
-                          }
-
-                          int id =
-                              item.optInt(
-                                  "id"
-                              );
-
-                          JSONObject price =
-                              latest.optJSONObject(
-                                  String.valueOf(id)
-                              );
-
-                          if (price == null)
-                              continue;
-
-                          long high =
-                              price.optLong(
-                                  "high",
-                                  0
-                              );
-
-                          long low =
-                              price.optLong(
-                                  "low",
-                                  0
-                              );
-
-                          long highTime =
-                              price.optLong(
-                                  "highTime",
-                                  0
-                              );
-
-                          long lowTime =
-                              price.optLong(
-                                  "lowTime",
-                                  0
-                              );
-
-                          String result =
-                              name
-                              +
-                              "\nBuy price: "
-                              +
-                              formatGp(high)
-                              +
-                              " gp"
-                              +
-                              "\nSell price: "
-                              +
-                              formatGp(low)
-                              +
-                              " gp"
-                              +
-                              "\nItem ID: "
-                              +
-                              id
-                              +
-                              "\n"
-                              +
-                              "Live OSRS price data";
-
-                          results.addView(
-                              text(
-                                  result,
-                                  17
-                              )
-                          );
-
-                          found++;
-
-                      } catch (Exception ignored) {
-                      }
-                  }
-
-                  if (found == 0) {
-
-                      results.addView(
-                          text(
-                              "No matching item found.",
-                              17
-                          )
-                      );
-                  }
-              }
-
-              private String formatGp(
-                  long value
-              ) {
-
-                  if (value >= 1000000000L) {
-
-                      return String.format(
-                          "%.2fB",
-                          value / 1000000000.0
-                      );
-                  }
-
-                  if (value >= 1000000L) {
-
-                      return String.format(
-                          "%.2fM",
-                          value / 1000000.0
-                      );
-                  }
-
-                  if (value >= 1000L) {
-
-                      return String.format(
-                          "%.1fK",
-                          value / 1000.0
-                      );
-                  }
-
-                  return String.valueOf(value);
-              }
-          }
-          EOF
-
-
-      # ============================================================
-      # INSTALL GRADLE
-      # ============================================================
-
-      - name: Install Gradle 8.9
-        run: |
-
-          wget -q \
-            https://services.gradle.org/distributions/gradle-8.9-bin.zip
-
-          unzip -q gradle-8.9-bin.zip
-
-          chmod +x \
-            gradle-8.9/bin/gradle
-
-
-      # ============================================================
-      # BUILD
-      # ============================================================
-
-      - name: Build QuestMate APK
-        working-directory: questmate
-        run: |
-
-          ../gradle-8.9/bin/gradle \
-            clean \
-            assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-
-      # ============================================================
-      # FIND APK
-      # ============================================================
-
-      - name: Find APK
-        run: |
-
-          echo "================================"
-          echo "SEARCHING FOR APK"
-          echo "================================"
-
-          find questmate \
-            -type f \
-            -name "*.apk" \
-            -print
-
-
-      # ============================================================
-      # PREPARE APK
-      # ============================================================
-
-      - name: Prepare APK
-        run: |
-
-          mkdir -p dist
-
-          cp \
-            questmate/app/build/outputs/apk/debug/app-debug.apk \
-            dist/QuestMate.apk
-
-          echo "================================"
-          echo "APK CREATED"
-          echo "================================"
-
-          ls -lh \
-            dist/QuestMate.apk
-
-          file \
-            dist/QuestMate.apk
-
-          echo "SHA256:"
-
-          sha256sum \
-            dist/QuestMate.apk
-
-          test -s \
-            dist/QuestMate.apk
-
-
-      # ============================================================
-      # UPLOAD APK
-      # ============================================================
-
-      - name: Upload QuestMate APK
-        id: upload
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: QuestMate-APK
-          path: dist/QuestMate.apk
-          if-no-files-found: error
-          retention-days: 30
-          overwrite: true
-
-
-      # ============================================================
-      # CONFIRM ARTIFACT
-      # ============================================================
-
-      - name: Confirm Artifact Upload
-        run: |
-
-          echo "========================================"
-          echo "QUESTMATE ARTIFACT UPLOAD SUCCESSFUL"
-          echo "========================================"
-
-          echo "Artifact ID:"
-          echo "${{ steps.upload.outputs.artifact-id }}"
-
-          echo "Artifact URL:"
-          echo "${{ steps.upload.outputs.artifact-url }}"
-
-          echo "Artifact SHA256:"
-          echo "${{ steps.upload.outputs.artifact-digest }}"
-
-          echo "========================================"
-
-          test -n \
-            "${{ steps.upload.outputs.artifact-id }}"
-
-          echo "Artifact verification PASSED."
+        
