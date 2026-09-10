@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   build:
@@ -17,7 +16,7 @@ jobs:
 
     steps:
 
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
 
@@ -40,14 +39,20 @@ jobs:
           sdkmanager "build-tools;35.0.0"
 
 
-      - name: Create QuestMate folders
+      - name: Create QuestMate project
+        shell: bash
         run: |
+
+          set -e
+
           rm -rf questmate-build
-          rm -f QuestMate.apk
+          rm -rf artifact
 
           mkdir -p questmate-build/app/src/main/java/com/questmate/app
           mkdir -p questmate-build/app/src/main/res/values
           mkdir -p questmate-build/app/src/main/assets
+
+          mkdir -p artifact
 
 
       - name: Create settings.gradle
@@ -146,9 +151,6 @@ jobs:
 
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-              <uses-permission
-                  android:name="android.permission.INTERNET" />
-
               <application
                   android:allowBackup="true"
                   android:label="QuestMate"
@@ -178,7 +180,7 @@ jobs:
           EOF
 
 
-      - name: Create app theme
+      - name: Create theme
         run: |
           cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -190,18 +192,9 @@ jobs:
                   parent="@android:style/Theme.Material.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-
-                  <item name="android:colorAccent">
-                      #00C853
-                  </item>
-
-                  <item name="android:statusBarColor">
-                      #101010
-                  </item>
-
-                  <item name="android:navigationBarColor">
-                      #101010
-                  </item>
+                  <item name="android:colorAccent">#00C853</item>
+                  <item name="android:statusBarColor">#101010</item>
+                  <item name="android:navigationBarColor">#101010</item>
 
               </style>
 
@@ -209,72 +202,90 @@ jobs:
           EOF
 
 
-      - name: Create quest database
+      - name: Create quest data
         run: |
-          python3 - <<'PY'
-          import json
-
-          quests = [
-              "Black Knights' Fortress",
-              "Below Ice Mountain",
-              "Cook's Assistant",
-              "Demon Slayer",
-              "Doric's Quest",
-              "Dragon Slayer I",
-              "Ernest the Chicken",
-              "Goblin Diplomacy",
-              "Imp Catcher",
-              "Misthalin Mystery",
-              "Pirate's Treasure",
-              "Prince Ali Rescue",
-              "The Restless Ghost",
-              "Romeo & Juliet",
-              "Rune Mysteries",
-              "Sheep Shearer",
-              "Shield of Arrav",
-              "The Knight's Sword",
-              "Vampire Slayer",
-              "The Corsair Curse",
-              "X Marks the Spot"
+          cat > questmate-build/app/src/main/assets/quests.json <<'EOF'
+          [
+            {
+              "name": "Cook's Assistant",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "start": "Cook in Lumbridge Castle",
+              "guide": [
+                "Speak to the Cook in Lumbridge Castle.",
+                "Find a bucket of milk.",
+                "Find an egg.",
+                "Find some flour.",
+                "Return the ingredients to the Cook.",
+                "Complete the quest."
+              ]
+            },
+            {
+              "name": "Doric's Quest",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "start": "Doric north of Falador",
+              "guide": [
+                "Speak to Doric.",
+                "Collect the required ores.",
+                "Return the ores to Doric.",
+                "Complete the quest."
+              ]
+            },
+            {
+              "name": "The Restless Ghost",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "start": "Father Aereck in Lumbridge Church",
+              "guide": [
+                "Speak to Father Aereck.",
+                "Speak to Father Urhney.",
+                "Investigate the ghost's location.",
+                "Find the skull.",
+                "Return the skull.",
+                "Complete the quest."
+              ]
+            },
+            {
+              "name": "Romeo & Juliet",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Medium",
+              "questPoints": 5,
+              "start": "Romeo in Varrock",
+              "guide": [
+                "Speak to Romeo.",
+                "Speak to Juliet.",
+                "Investigate the situation.",
+                "Collect the required items.",
+                "Follow the QuestMate instructions.",
+                "Complete the quest."
+              ]
+            },
+            {
+              "name": "Vampire Slayer",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 3,
+              "start": "Morgan in Draynor Village",
+              "guide": [
+                "Speak to Morgan.",
+                "Prepare for the vampire fight.",
+                "Travel to the vampire's location.",
+                "Defeat the vampire.",
+                "Return to Morgan.",
+                "Complete the quest."
+              ]
+            }
           ]
-
-          data = []
-
-          for name in quests:
-              data.append({
-                  "name": name,
-                  "members": False,
-                  "difficulty": "Quest guide",
-                  "length": "Varies",
-                  "questPoints": 0,
-                  "start": "See QuestMate guide",
-                  "guide": [
-                      "Check your requirements.",
-                      "Prepare your required items.",
-                      "Travel to the quest starting area.",
-                      "Speak to the required NPC.",
-                      "Follow the QuestMate instructions.",
-                      "Complete the required objectives.",
-                      "Finish the quest.",
-                      "Mark the quest complete."
-                  ]
-              })
-
-          with open(
-              "questmate-build/app/src/main/assets/quests.json",
-              "w",
-              encoding="utf-8"
-          ) as f:
-              json.dump(
-                  data,
-                  f,
-                  ensure_ascii=False,
-                  indent=2
-              )
-
-          print("Quest database created.")
-          print("Quest count:", len(data))
-          PY
+          EOF
 
 
       - name: Create MainActivity
@@ -308,6 +319,7 @@ jobs:
               private final List<Quest> quests =
                       new ArrayList<>();
 
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
 
@@ -329,10 +341,7 @@ jobs:
                   );
 
                   root.setPadding(
-                          16,
-                          16,
-                          16,
-                          16
+                          16, 16, 16, 16
                   );
 
                   root.setBackgroundColor(
@@ -390,9 +399,7 @@ jobs:
                           minimize
                   );
 
-                  root.addView(
-                          header
-                  );
+                  root.addView(header);
 
 
                   TextView subtitle =
@@ -406,13 +413,7 @@ jobs:
                           Color.LTGRAY
                   );
 
-                  subtitle.setTextSize(
-                          16
-                  );
-
-                  root.addView(
-                          subtitle
-                  );
+                  root.addView(subtitle);
 
 
                   EditText search =
@@ -430,9 +431,7 @@ jobs:
                           Color.GRAY
                   );
 
-                  root.addView(
-                          search
-                  );
+                  root.addView(search);
 
 
                   ScrollView scroll =
@@ -447,9 +446,7 @@ jobs:
                   );
 
 
-                  scroll.addView(
-                          questList
-                  );
+                  scroll.addView(questList);
 
 
                   root.addView(
@@ -496,16 +493,12 @@ jobs:
               }
 
 
-              private void refresh(
-                      String searchText
-              ) {
+              private void refresh(String text) {
 
                   questList.removeAllViews();
 
                   String search =
-                          searchText
-                          .toLowerCase()
-                          .trim();
+                          text.toLowerCase().trim();
 
 
                   for (Quest quest : quests) {
@@ -526,7 +519,13 @@ jobs:
 
                       button.setText(
                               quest.name
-                              + "\nF2P"
+                              + "\n"
+                              +
+                              (
+                                  quest.members
+                                  ? "MEMBERS"
+                                  : "F2P"
+                              )
                       );
 
 
@@ -539,16 +538,14 @@ jobs:
                               button,
                               new LinearLayout.LayoutParams(
                                       -1,
-                                      82
+                                      85
                               )
                       );
                   }
               }
 
 
-              private void showQuest(
-                      Quest quest
-              ) {
+              private void showQuest(Quest quest) {
 
                   LinearLayout root =
                           new LinearLayout(this);
@@ -558,214 +555,8 @@ jobs:
                   );
 
                   root.setPadding(
-                          16,
-                          16,
-                          16,
-                          16
+                          16,16,16,16
                   );
 
                   root.setBackgroundColor(
-                          Color.rgb(18,18,18)
-                  );
-
-
-                  LinearLayout top =
-                          new LinearLayout(this);
-
-
-                  Button back =
-                          new Button(this);
-
-                  back.setText(
-                          "BACK"
-                  );
-
-                  back.setOnClickListener(
-                          v -> showHome()
-                  );
-
-
-                  top.addView(
-                          back
-                  );
-
-
-                  Button minimize =
-                          new Button(this);
-
-                  minimize.setText(
-                          "MINIMIZE"
-                  );
-
-                  minimize.setOnClickListener(
-                          v -> moveTaskToBack(true)
-                  );
-
-
-                  top.addView(
-                          minimize
-                  );
-
-
-                  root.addView(
-                          top
-                  );
-
-
-                  TextView title =
-                          new TextView(this);
-
-                  title.setText(
-                          quest.name
-                  );
-
-                  title.setTextColor(
-                          Color.WHITE
-                  );
-
-                  title.setTextSize(
-                          25
-                  );
-
-
-                  root.addView(
-                          title
-                  );
-
-
-                  TextView details =
-                          new TextView(this);
-
-                  details.setTextColor(
-                          Color.LTGRAY
-                  );
-
-                  details.setTextSize(
-                          16
-                  );
-
-                  details.setText(
-                          "\nDifficulty: "
-                          + quest.difficulty
-                          + "\n\nLength: "
-                          + quest.length
-                          + "\n\nQuest points: "
-                          + quest.questPoints
-                          + "\n\nStart: "
-                          + quest.start
-                  );
-
-
-                  root.addView(
-                          details
-                  );
-
-
-                  TextView guideTitle =
-                          new TextView(this);
-
-                  guideTitle.setText(
-                          "\nQUESTMATE GUIDE"
-                  );
-
-                  guideTitle.setTextColor(
-                          Color.WHITE
-                  );
-
-                  guideTitle.setTextSize(
-                          21
-                  );
-
-
-                  root.addView(
-                          guideTitle
-                  );
-
-
-                  ScrollView guideScroll =
-                          new ScrollView(this);
-
-
-                  LinearLayout guide =
-                          new LinearLayout(this);
-
-                  guide.setOrientation(
-                          LinearLayout.VERTICAL
-                  );
-
-
-                  for (
-                          int i = 0;
-                          i < quest.guide.size();
-                          i++
-                  ) {
-
-                      CheckBox check =
-                              new CheckBox(this);
-
-                      check.setText(
-                              (i + 1)
-                              + ". "
-                              + quest.guide.get(i)
-                      );
-
-                      check.setTextColor(
-                              Color.WHITE
-                      );
-
-
-                      String key =
-                              "quest_"
-                              + quest.name
-                              + "_"
-                              + i;
-
-
-                      check.setChecked(
-                              getPreferences(
-                                      MODE_PRIVATE
-                              ).getBoolean(
-                                      key,
-                                      false
-                              )
-                      );
-
-
-                      check.setOnCheckedChangeListener(
-                              (button, checked) -> {
-
-                                  getPreferences(
-                                      MODE_PRIVATE
-                                  )
-                                  .edit()
-                                  .putBoolean(
-                                      key,
-                                      checked
-                                  )
-                                  .apply();
-                              }
-                      );
-
-
-                      guide.addView(
-                              check
-                      );
-                  }
-
-
-                  guideScroll.addView(
-                          guide
-                  );
-
-
-                  root.addView(
-                          guideScroll,
-                          new LinearLayout.LayoutParams(
-                                  -1,
-                                  0,
-                                  1
-                          )
-                  );
-
-
-                  setContentView(roo
+                          Color.rgb
