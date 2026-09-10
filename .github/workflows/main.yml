@@ -1,25 +1,43 @@
-name: QuestMate APK Artifact Test
+name: Build QuestMate APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build QuestMate APK
     runs-on: ubuntu-latest
 
     steps:
 
+      # ------------------------------------------------------------
+      # CHECKOUT
+      # ------------------------------------------------------------
+
       - name: Checkout
         uses: actions/checkout@v4
+
+
+      # ------------------------------------------------------------
+      # JAVA 17
+      # ------------------------------------------------------------
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+
+
+      # ------------------------------------------------------------
+      # ANDROID SDK
+      # ------------------------------------------------------------
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -28,12 +46,558 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Create test Android project
-        run: |
-          mkdir -p app/src/main/java/com/questmate/app
-          mkdir -p app/src/main/res/values
 
-          cat > settings.gradle <<'EOF'
+      # ------------------------------------------------------------
+      # DOWNLOAD CURRENT QUEST HELPER SOURCE
+      # ------------------------------------------------------------
+
+      - name: Download Quest Helper
+        run: |
+          git clone --depth 1 \
+            https://github.com/Zoinkwiz/quest-helper.git \
+            quest-helper-source
+
+          mkdir -p appdata
+
+          cp quest-helper-source/LICENSE \
+            appdata/QUEST_HELPER_LICENSE.txt
+
+
+      # ------------------------------------------------------------
+      # DOWNLOAD CURRENT RUNELITE QUEST LIST
+      # ------------------------------------------------------------
+
+      - name: Download RuneLite quest data
+        run: |
+          curl -L \
+            https://raw.githubusercontent.com/runelite/runelite/master/runelite-api/src/main/java/net/runelite/api/Quest.java \
+            -o appdata/Quest.java
+
+
+      # ------------------------------------------------------------
+      # GENERATE QUEST DATA
+      # ------------------------------------------------------------
+
+      - name: Generate QuestMate quest database
+        run: |
+
+          cat > generate_quests.py <<'PYTHON'
+          import os
+          import re
+          import json
+
+          QUEST_FILE = "appdata/Quest.java"
+          HELPER_ROOT = "quest-helper-source/src/main/java/com/questhelper/helpers/quests"
+          OUTPUT = "appdata/quests.json"
+
+          def norm(value):
+              return re.sub(r'[^a-z0-9]', '', value.lower())
+
+          # ----------------------------------------------------------
+          # READ CURRENT RUNELITE QUEST NAMES
+          # ----------------------------------------------------------
+
+          with open(QUEST_FILE, "r", encoding="utf-8") as f:
+              quest_source = f.read()
+
+          quests = []
+
+          # Handles:
+          # SOME_QUEST("Some Quest", ...)
+          pattern = re.compile(
+              r'\b([A-Z0-9_]+)\s*\(\s*"([^"]+)"'
+          )
+
+          for enum_name, display_name in pattern.findall(quest_source):
+              if display_name and display_name not in [
+                  "None",
+                  "Unknown"
+              ]:
+                  quests.append({
+                      "enum": enum_name,
+                      "title": display_name
+                  })
+
+          # Remove duplicates
+          unique = {}
+          for q in quests:
+              unique[q["title"]] = q
+
+          quests = list(unique.values())
+
+          # ----------------------------------------------------------
+          # CURRENT F2P QUESTS
+          # ----------------------------------------------------------
+
+          f2p_names = {
+              "Black Knights' Fortress",
+              "Below Ice Mountain",
+              "Cook's Assistant",
+              "Demon Slayer",
+              "Doric's Quest",
+              "Dragon Slayer I",
+              "Ernest the Chicken",
+              "Goblin Diplomacy",
+              "The Corsair Curse",
+              "The Ides of Milk",
+              "Imp Catcher",
+              "Misthalin Mystery",
+              "Pirate's Treasure",
+              "Prince Ali Rescue",
+              "The Restless Ghost",
+              "Romeo & Juliet",
+              "Rune Mysteries",
+              "Sheep Shearer",
+              "Shield of Arrav",
+              "The Knight's Sword",
+              "Vampyre Slayer",
+              "Witch's Potion",
+              "X Marks the Spot"
+          }
+
+          # ----------------------------------------------------------
+          # STEP EXTRACTION
+          # ----------------------------------------------------------
+
+          def string_literals(text):
+              return re.findall(
+                  r'"((?:\\.|[^"\\])*)"',
+                  text,
+                  re.DOTALL
+              )
+
+          def clean_string(value):
+              try:
+                  return bytes(value, "utf-8").decode(
+                      "unicode_escape"
+                  )
+              except:
+                  return value
+
+          def extract_steps(source):
+              steps = {}
+
+              # Find variable declarations such as:
+              #
+              # searchBookcase = new ObjectStep(...,
+              #     "Search the marked bookcase...");
+              #
+              # The longest useful string in the constructor is
+              # generally the human-readable step description.
+
+              declaration = re.compile(
+                  r'\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+[A-Za-z0-9_<>]+\s*\(',
+                  re.MULTILINE
+              )
+
+              for match in declaration.finditer(source):
+
+                  variable = match.group(1)
+
+                  start = match.end()
+                  end = source.find(";", start)
+
+                  if end == -1:
+                      continue
+
+                  body = source[start:end]
+
+                  strings = [
+                      clean_string(x)
+                      for x in string_literals(body)
+                  ]
+
+                  useful = []
+
+                  for s in strings:
+                      s = s.replace("\\n", " ").strip()
+
+                      if len(s) < 5:
+                          continue
+
+                      if s.startswith("ItemID."):
+                          continue
+
+                      useful.append(s)
+
+                  if useful:
+                      # Longest string is normally the actual
+                      # step instruction.
+                      description = max(
+                          useful,
+                          key=len
+                      )
+
+                      steps[variable] = description
+
+              return steps
+
+          def extract_panels(source, steps):
+
+              panels = []
+
+              panel_pattern = re.compile(
+                  r'new\s+PanelDetails\s*\(\s*"([^"]+)"\s*,\s*Arrays\.asList\s*\((.*?)\)\s*',
+                  re.DOTALL
+              )
+
+              for panel_title, body in panel_pattern.findall(source):
+
+                  variables = re.findall(
+                      r'\b([A-Za-z_][A-Za-z0-9_]*)\b',
+                      body
+                  )
+
+                  panel_steps = []
+
+                  for variable in variables:
+                      if variable in steps:
+                          if steps[variable] not in panel_steps:
+                              panel_steps.append(
+                                  steps[variable]
+                              )
+
+                  if panel_steps:
+                      panels.append({
+                          "title": panel_title,
+                          "steps": panel_steps
+                      })
+
+              return panels
+
+          def extract_items(source):
+
+              items = []
+
+              for item in re.findall(
+                  r'new\s+ItemRequirement\s*\(\s*"([^"]+)"',
+                  source
+              ):
+                  if item not in items:
+                      items.append(item)
+
+              return items
+
+          def extract_combat(source):
+
+              results = []
+
+              pattern = re.compile(
+                  r'getCombatRequirements\s*\(\s*\).*?return\s+Collections\.singletonList\s*\(\s*"([^"]+)"',
+                  re.DOTALL
+              )
+
+              for value in pattern.findall(source):
+                  if value not in results:
+                      results.append(value)
+
+              return results
+
+          def extract_qp(source):
+
+              match = re.search(
+                  r'QuestPointReward\s*\(\s*(\d+)\s*\)',
+                  source
+              )
+
+              if match:
+                  return int(match.group(1))
+
+              return 0
+
+          def extract_item_rewards(source):
+
+              rewards = []
+
+              for item in re.findall(
+                  r'new\s+ItemReward\s*\(\s*"([^"]+)"',
+                  source
+              ):
+                  if item not in rewards:
+                      rewards.append(item)
+
+              return rewards
+
+          def extract_skill_requirements(source):
+
+              requirements = []
+
+              pattern = re.compile(
+                  r'new\s+SkillRequirement\s*\(\s*Skill\.([A-Z_]+)\s*,\s*(\d+)\s*\)'
+              )
+
+              for skill, level in pattern.findall(source):
+
+                  pretty = skill.replace("_", " ").title()
+
+                  text = f"{pretty} {level}"
+
+                  if text not in requirements:
+                      requirements.append(text)
+
+              return requirements
+
+          # ----------------------------------------------------------
+          # INDEX HELPER JAVA FILES
+          # ----------------------------------------------------------
+
+          helper_files = []
+
+          for root, dirs, files in os.walk(HELPER_ROOT):
+
+              for filename in files:
+
+                  if filename.endswith(".java"):
+
+                      helper_files.append(
+                          os.path.join(root, filename)
+                      )
+
+          print(
+              f"Found {len(helper_files)} quest helper source files"
+          )
+
+          helper_by_name = {}
+
+          for path in helper_files:
+
+              try:
+
+                  with open(
+                      path,
+                      "r",
+                      encoding="utf-8"
+                  ) as f:
+                      source = f.read()
+
+                  class_match = re.search(
+                      r'public\s+class\s+([A-Za-z0-9_]+)',
+                      source
+                  )
+
+                  if not class_match:
+                      continue
+
+                  class_name = class_match.group(1)
+
+                  # Ignore utility classes
+                  if class_name in [
+                      "QuestHelper",
+                      "QuestSteps",
+                      "QuestHelperPlugin"
+                  ]:
+                      continue
+
+                  helper_by_name[
+                      norm(class_name)
+                  ] = {
+                      "source": source,
+                      "path": path
+                  }
+
+              except Exception as e:
+
+                  print(
+                      "Could not read:",
+                      path,
+                      e
+                  )
+
+          # ----------------------------------------------------------
+          # MATCH QUESTS TO HELPERS
+          # ----------------------------------------------------------
+
+          generated = []
+
+          for quest in quests:
+
+              title = quest["title"]
+
+              helper = helper_by_name.get(
+                  norm(title)
+              )
+
+              # Some Java helper class names omit punctuation
+              # or use slightly different naming.
+              if helper is None:
+
+                  for key, candidate in helper_by_name.items():
+
+                      if key == norm(title):
+                          helper = candidate
+                          break
+
+              source = ""
+
+              if helper:
+                  source = helper["source"]
+
+              steps = extract_steps(source)
+
+              panels = extract_panels(
+                  source,
+                  steps
+              )
+
+              items = extract_items(source)
+
+              combat = extract_combat(source)
+
+              qp = extract_qp(source)
+
+              item_rewards = extract_item_rewards(
+                  source
+              )
+
+              requirements = extract_skill_requirements(
+                  source
+              )
+
+              # If no panels were found, create one
+              # using every extracted step.
+              if not panels and steps:
+
+                  ordered_steps = []
+
+                  for value in steps.values():
+
+                      if value not in ordered_steps:
+                          ordered_steps.append(value)
+
+                  panels = [{
+                      "title": "Quest Walkthrough",
+                      "steps": ordered_steps
+                  }]
+
+              all_steps = []
+
+              for panel in panels:
+
+                  for step in panel["steps"]:
+
+                      if step not in all_steps:
+                          all_steps.append(step)
+
+              if not all_steps:
+
+                  all_steps = [
+                      "Detailed Quest Helper instructions are not available for this quest in the current source."
+                  ]
+
+              generated.append({
+                  "title": title,
+                  "members": title not in f2p_names,
+                  "questPoints": qp,
+                  "requirements": requirements,
+                  "items": items,
+                  "combat": combat,
+                  "rewards": item_rewards,
+                  "panels": panels,
+                  "steps": all_steps
+              })
+
+          # ----------------------------------------------------------
+          # SORT QUESTS ALPHABETICALLY
+          # ----------------------------------------------------------
+
+          generated.sort(
+              key=lambda q: q["title"].lower()
+          )
+
+          os.makedirs(
+              os.path.dirname(OUTPUT),
+              exist_ok=True
+          )
+
+          with open(
+              OUTPUT,
+              "w",
+              encoding="utf-8"
+          ) as f:
+
+              json.dump(
+                  generated,
+                  f,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
+          print(
+              "Generated",
+              len(generated),
+              "quests"
+          )
+
+          print(
+              "F2P:",
+              sum(
+                  1
+                  for q in generated
+                  if not q["members"]
+              )
+          )
+
+          print(
+              "Members:",
+              sum(
+                  1
+                  for q in generated
+                  if q["members"]
+              )
+          )
+
+          print(
+              "Output:",
+              OUTPUT
+          )
+
+          PYTHON
+
+          python3 generate_quests.py
+
+          echo "Quest database size:"
+          ls -lh appdata/quests.json
+
+          echo "Quest count:"
+          python3 - <<'PY'
+          import json
+
+          with open(
+              "appdata/quests.json",
+              encoding="utf-8"
+          ) as f:
+              data = json.load(f)
+
+          print(len(data))
+          PY
+
+
+      # ------------------------------------------------------------
+      # CREATE ANDROID PROJECT
+      # ------------------------------------------------------------
+
+      - name: Create Android project
+        run: |
+
+          mkdir -p questmate/app/src/main/java/com/questmate/app
+          mkdir -p questmate/app/src/main/res/values
+          mkdir -p questmate/app/src/main/assets
+
+          cp appdata/quests.json \
+            questmate/app/src/main/assets/quests.json
+
+          cp appdata/QUEST_HELPER_LICENSE.txt \
+            questmate/app/src/main/assets/QUEST_HELPER_LICENSE.txt
+
+
+      # ------------------------------------------------------------
+      # SETTINGS
+      # ------------------------------------------------------------
+
+      - name: Create Gradle settings
+        run: |
+
+          cat > questmate/settings.gradle <<'EOF'
           pluginManagement {
               repositories {
                   google()
@@ -44,6 +608,7 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
               repositories {
                   google()
                   mavenCentral()
@@ -51,54 +616,118 @@ jobs:
           }
 
           rootProject.name = "QuestMate"
+
           include(":app")
           EOF
 
-          cat > build.gradle <<'EOF'
+
+      # ------------------------------------------------------------
+      # ROOT GRADLE
+      # ------------------------------------------------------------
+
+      - name: Create root Gradle file
+        run: |
+
+          cat > questmate/build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.7.3' apply false
           }
           EOF
 
-          cat > gradle.properties <<'EOF'
+
+      # ------------------------------------------------------------
+      # GRADLE PROPERTIES
+      # ------------------------------------------------------------
+
+      - name: Create Gradle properties
+        run: |
+
+          cat > questmate/gradle.properties <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
           EOF
 
-          cat > app/build.gradle <<'EOF'
+
+      # ------------------------------------------------------------
+      # APP GRADLE
+      # ------------------------------------------------------------
+
+      - name: Create app Gradle file
+        run: |
+
+          cat > questmate/app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
           }
 
           android {
+
               namespace 'com.questmate.app'
+
               compileSdk 35
 
               defaultConfig {
+
                   applicationId 'com.questmate.app'
+
                   minSdk 23
+
                   targetSdk 35
+
                   versionCode 1
+
                   versionName '1.0'
               }
           }
           EOF
 
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
+
+      # ------------------------------------------------------------
+      # ANDROID MANIFEST
+      # ------------------------------------------------------------
+
+      - name: Create Android manifest
+        run: |
+
+          cat > questmate/app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission
+                  android:name="android.permission.INTERNET" />
 
               <application
                   android:theme="@style/AppTheme"
-                  android:label="QuestMate">
+                  android:label="QuestMate"
+                  android:allowBackup="false"
+                  android:supportsRtl="true">
+
+                  <activity
+                      android:name=".PriceActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".QuestDetailActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".QuestActivity"
+                      android:exported="false" />
 
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
 
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
                       </intent-filter>
 
                   </activity>
@@ -106,100 +735,4 @@ jobs:
               </application>
 
           </manifest>
-          EOF
-
-          cat > app/src/main/res/values/styles.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme"
-                  parent="android:style/Theme.Material.Light.NoActionBar">
-              </style>
-          </resources>
-          EOF
-
-          cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-          package com.questmate.app;
-
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.widget.TextView;
-
-          public class MainActivity extends Activity {
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  TextView text = new TextView(this);
-                  text.setText("QuestMate APK Test");
-                  text.setTextSize(30);
-
-                  setContentView(text);
-              }
-          }
-          EOF
-
-      - name: Install Gradle
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q gradle-8.9-bin.zip
-          chmod +x gradle-8.9/bin/gradle
-
-      - name: Build APK
-        run: |
-          ./gradle-8.9/bin/gradle \
-            clean \
-            assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-      - name: Verify APK
-        run: |
-          echo "=== APK SEARCH ==="
-          find . -type f -name "*.apk" -print
-
-          echo "=== APK DETAILS ==="
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
-
-          file app/build/outputs/apk/debug/app-debug.apk
-
-          sha256sum app/build/outputs/apk/debug/app-debug.apk
-
-          test -s app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Copy APK
-        run: |
-          mkdir -p dist
-
-          cp \
-            app/build/outputs/apk/debug/app-debug.apk \
-            dist/QuestMate.apk
-
-          echo "=== DIST ==="
-          ls -lah dist
-
-          test -s dist/QuestMate.apk
-
-      - name: Upload APK
-        id: upload
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: QuestMate-APK
-          path: dist/QuestMate.apk
-          if-no-files-found: error
-          retention-days: 30
-          overwrite: true
-
-      - name: Confirm Artifact Upload
-        run: |
-          echo "================================"
-          echo "ARTIFACT UPLOAD SUCCESSFUL"
-          echo "Artifact ID:"
-          echo "${{ steps.upload.outputs.artifact-id }}"
-          echo "Artifact URL:"
-          echo "${{ steps.upload.outputs.artifact-url }}"
-          echo "Artifact SHA256:"
-          echo "${{ steps.upload.outputs.artifact-digest }}"
-          echo "================================"
-
-          test -n "${{ steps.upload.outputs.artifact-id }}"
+          EO
