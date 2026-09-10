@@ -29,20 +29,29 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK
+      - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
+      # ==========================================================
+      # CREATE PROJECT
+      # ==========================================================
+
       - name: Create QuestMate project
+        shell: bash
         run: |
 
+          set -e
+
           rm -rf questmate-build
+          rm -rf artifact
 
           mkdir -p questmate-build/app/src/main/java/com/questmate/app
           mkdir -p questmate-build/app/src/main/res/values
+          mkdir -p artifact
 
           cd questmate-build
 
@@ -79,6 +88,8 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
+          mkdir -p app
+
           cat > app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
@@ -112,8 +123,8 @@ jobs:
 
                   <activity
                       android:name=".MainActivity"
-                      android:screenOrientation="portrait"
-                      android:exported="true">
+                      android:exported="true"
+                      android:screenOrientation="portrait">
 
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -269,7 +280,6 @@ jobs:
                   searchBox.setHintTextColor(Color.GRAY);
                   searchBox.setTextColor(Color.WHITE);
                   searchBox.setSingleLine(true);
-                  searchBox.setPadding(20, 10, 20, 10);
 
                   root.addView(
                           searchBox,
@@ -281,7 +291,6 @@ jobs:
 
                   LinearLayout filters = new LinearLayout(this);
                   filters.setOrientation(LinearLayout.HORIZONTAL);
-                  filters.setGravity(Gravity.CENTER);
 
                   Button allButton = new Button(this);
                   allButton.setText("ALL");
@@ -412,6 +421,7 @@ jobs:
 
                       if (text.isEmpty()
                               || quest.name.toLowerCase().contains(text)) {
+
                           addQuestCard(quest);
                       }
                   }
@@ -420,38 +430,3 @@ jobs:
               private void addQuestCard(Quest quest) {
 
                   LinearLayout card = new LinearLayout(this);
-                  card.setOrientation(LinearLayout.VERTICAL);
-                  card.setPadding(20, 18, 20, 18);
-                  card.setBackgroundColor(Color.rgb(35, 35, 35));
-
-                  LinearLayout.LayoutParams cardParams =
-                          new LinearLayout.LayoutParams(
-                                  ViewGroup.LayoutParams.MATCH_PARENT,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT
-                          );
-
-                  cardParams.setMargins(0, 0, 0, 16);
-
-                  card.setLayoutParams(cardParams);
-
-                  TextView name = new TextView(this);
-                  name.setText(quest.name);
-                  name.setTextColor(Color.WHITE);
-                  name.setTextSize(21);
-                  name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-                  card.addView(name);
-
-                  TextView details = new TextView(this);
-
-                  details.setText(
-                          quest.type
-                                  + " • "
-                                  + quest.difficulty
-                                  + " • "
-                                  + quest.length
-                                  + "\nStart: "
-                                  + quest.start
-                                  + "\nRequirements: "
-                                  + quest.requirements
-                  );
