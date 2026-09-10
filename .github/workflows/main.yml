@@ -736,3 +736,52 @@ jobs:
 
           </manifest>
           EO
+      # ------------------------------------------------------------
+      # MAKE APK AVAILABLE AS ARTIFACT
+      # ------------------------------------------------------------
+
+      - name: Find APK
+        run: |
+          echo "Looking for APK..."
+          find questmate -type f -name "*.apk" -print
+
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+
+          cp questmate/app/build/outputs/apk/debug/app-debug.apk \
+             dist/QuestMate.apk
+
+          echo "APK ready:"
+          ls -lh dist/QuestMate.apk
+
+          test -s dist/QuestMate.apk
+
+      - name: Upload QuestMate APK
+        id: upload
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: QuestMate-APK
+          path: dist/QuestMate.apk
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+
+      - name: Confirm Artifact Upload
+        run: |
+          echo "================================"
+          echo "QUESTMATE APK ARTIFACT CREATED"
+          echo "================================"
+
+          echo "Artifact ID:"
+          echo "${{ steps.upload.outputs.artifact-id }}"
+
+          echo "Artifact URL:"
+          echo "${{ steps.upload.outputs.artifact-url }}"
+
+          echo "Artifact SHA256:"
+          echo "${{ steps.upload.outputs.artifact-digest }}"
+
+          echo "================================"
+
+          test -n "${{ steps.upload.outputs.artifact-id }}"
