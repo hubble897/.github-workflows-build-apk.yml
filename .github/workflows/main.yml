@@ -122,10 +122,13 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
 
-              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+              <style name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
                   <item name="android:fontFamily">sans</item>
                   <item name="android:windowActionModeOverlay">true</item>
                   <item name="android:colorAccent">#4CAF50</item>
+
               </style>
 
           </resources>
@@ -170,4 +173,64 @@ jobs:
                   quests.setText("Quests");
 
                   Button minimize = new Button(this);
-                  minimize
+                  minimize.setText("MINIMIZE");
+
+                  minimize.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          moveTaskToBack(true);
+                      }
+                  });
+
+                  layout.addView(title);
+                  layout.addView(subtitle);
+                  layout.addView(quests);
+                  layout.addView(minimize);
+
+                  setContentView(layout);
+              }
+          }
+          EOF
+
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          chmod +x gradle-8.9/bin/gradle
+
+      - name: Build APK
+        working-directory: questmate
+        run: |
+          ../gradle-8.9/bin/gradle clean assembleDebug --no-daemon --stacktrace
+
+      - name: Find APK
+        run: |
+          echo "Searching for APK..."
+          find questmate -type f -name "*.apk" -print
+
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+
+          cp questmate/app/build/outputs/apk/debug/app-debug.apk \
+             dist/QuestMate.apk
+
+          echo "APK created:"
+          ls -lh dist/QuestMate.apk
+
+          echo "APK file information:"
+          file dist/QuestMate.apk
+
+          echo "APK SHA256:"
+          sha256sum dist/QuestMate.apk
+
+          test -f dist/QuestMate.apk
+
+      - name: Upload QuestMate APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-APK
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
