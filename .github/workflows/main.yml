@@ -1,14 +1,15 @@
 name: Build QuestMate APK
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
+  actions: read
+  artifact-metadata: write
 
 jobs:
   build:
@@ -17,41 +18,45 @@ jobs:
 
     steps:
 
-      - name: Checkout
+      # ---------------------------------------------------------
+      # 1. CHECKOUT
+      # ---------------------------------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      # ---------------------------------------------------------
+      # 2. JAVA 17
+      # ---------------------------------------------------------
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
+      # ---------------------------------------------------------
+      # 3. ANDROID SDK
+      # ---------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" \
+                     "platforms;android-35" \
+                     "build-tools;35.0.0"
 
-      # =====================================================
-      # CREATE PROJECT
-      # =====================================================
-
+      # ---------------------------------------------------------
+      # 4. CREATE A CLEAN QUESTMATE PROJECT
+      # ---------------------------------------------------------
       - name: Create QuestMate project
         shell: bash
         run: |
-
           set -e
 
           rm -rf questmate-build
-          rm -rf artifact
-
           mkdir -p questmate-build/app/src/main/java/com/questmate/app
           mkdir -p questmate-build/app/src/main/res/values
-          mkdir -p artifact
 
           cd questmate-build
 
@@ -83,9 +88,9 @@ jobs:
           EOF
 
           cat > gradle.properties <<'EOF'
-          android.useAndroidX=true
-          android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=false
           EOF
 
           cat > app/build.gradle <<'EOF'
@@ -104,6 +109,26 @@ jobs:
                   versionCode 1
                   versionName '1.0'
               }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+
+                  debug {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'com.google.android.material:material:1.12.0'
           }
           EOF
 
@@ -121,8 +146,7 @@ jobs:
 
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="portrait">
+                      android:exported="true">
 
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -138,16 +162,15 @@ jobs:
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-
           <resources>
 
               <style name="AppTheme"
-                  parent="android:style/Theme.Material.NoActionBar">
+                  parent="Theme.MaterialComponents.DayNight.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:navigationBarColor">#000000</item>
-                  <item name="android:statusBarColor">#111111</item>
                   <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:statusBarColor">#101820</item>
+                  <item name="android:navigationBarColor">#101820</item>
 
               </style>
 
@@ -157,471 +180,178 @@ jobs:
           cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
           package com.questmate.app;
 
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.graphics.Color;
+          import android.content.Context;
+          import android.content.SharedPreferences;
           import android.graphics.Typeface;
+          import android.os.Bundle;
+          import android.text.Editable;
+          import android.text.TextWatcher;
           import android.view.Gravity;
+          import android.view.View;
           import android.view.ViewGroup;
           import android.widget.Button;
+          import android.widget.CheckBox;
           import android.widget.EditText;
           import android.widget.LinearLayout;
           import android.widget.ScrollView;
           import android.widget.TextView;
 
+          import androidx.appcompat.app.AppCompatActivity;
+
           import java.util.ArrayList;
           import java.util.List;
+          import java.util.Locale;
 
-          public class MainActivity extends Activity {
+          public class MainActivity extends AppCompatActivity {
 
-              private LinearLayout questList;
+              private LinearLayout questContainer;
               private EditText searchBox;
+              private String activeFilter = "ALL";
 
               private final List<Quest> quests = new ArrayList<>();
+
+              private SharedPreferences progress;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  createQuestData();
-                  createInterface();
+                  progress = getSharedPreferences("QuestMateProgress", MODE_PRIVATE);
+
+                  loadQuestData();
+                  buildInterface();
+                  refreshQuestList();
               }
 
-              private void createQuestData() {
+              private void loadQuestData() {
 
                   quests.add(new Quest(
                           "Cook's Assistant",
-                          "F2P",
+                          false,
                           "Novice",
                           "Short",
-                          "Lumbridge Castle",
-                          "None"
+                          1,
+                          "Cook in Lumbridge Castle",
+                          new String[]{
+                                  "None"
+                          },
+                          new String[]{
+                                  "Bucket",
+                                  "Pot"
+                          },
+                          new String[]{
+                                  "Talk to the Cook in Lumbridge Castle.",
+                                  "Bring the Cook the required ingredients.",
+                                  "Return the ingredients to the Cook.",
+                                  "Finish the quest and claim your reward."
+                          }
                   ));
 
                   quests.add(new Quest(
                           "Demon Slayer",
-                          "F2P",
+                          false,
                           "Novice",
                           "Medium",
-                          "Varrock",
-                          "None"
+                          3,
+                          "Gypsy in Varrock",
+                          new String[]{
+                                  "None"
+                          },
+                          new String[]{
+                                  "Bucket of water",
+                                  "Coins"
+                          },
+                          new String[]{
+                                  "Speak with the quest starter in Varrock.",
+                                  "Learn about the demon threatening the city.",
+                                  "Collect the required items.",
+                                  "Prepare for the final encounter.",
+                                  "Defeat the demon.",
+                                  "Return and complete the quest."
+                          }
                   ));
 
                   quests.add(new Quest(
                           "Dragon Slayer I",
-                          "F2P",
+                          false,
                           "Experienced",
                           "Long",
-                          "Champions' Guild",
-                          "32 Quest Points"
-                  ));
-
-                  quests.add(new Quest(
-                          "Romeo & Juliet",
-                          "F2P",
-                          "Novice",
-                          "Short",
-                          "Varrock",
-                          "None"
+                          2,
+                          "Guildmaster in Champions' Guild",
+                          new String[]{
+                                  "32 Quest Points",
+                                  "Ability to defeat a powerful dragon"
+                          },
+                          new String[]{
+                                  "Anti-dragon shield",
+                                  "Food",
+                                  "Combat equipment",
+                                  "Coins"
+                          },
+                          new String[]{
+                                  "Speak to the Guildmaster.",
+                                  "Learn what is required to become a true champion.",
+                                  "Travel to the required locations.",
+                                  "Collect the map pieces.",
+                                  "Prepare your combat equipment.",
+                                  "Travel to Crandor.",
+                                  "Fight the dragon.",
+                                  "Return to complete the quest."
+                          }
                   ));
 
                   quests.add(new Quest(
                           "The Restless Ghost",
-                          "F2P",
+                          false,
                           "Novice",
                           "Short",
-                          "Lumbridge",
-                          "None"
-                  ));
-              }
-
-              private void createInterface() {
-
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setBackgroundColor(Color.rgb(18, 18, 18));
-
-                  LinearLayout header = new LinearLayout(this);
-                  header.setOrientation(LinearLayout.HORIZONTAL);
-                  header.setGravity(Gravity.CENTER_VERTICAL);
-                  header.setPadding(24, 20, 16, 20);
-                  header.setBackgroundColor(Color.rgb(30, 30, 30));
-
-                  TextView title = new TextView(this);
-                  title.setText("QuestMate");
-                  title.setTextColor(Color.WHITE);
-                  title.setTextSize(26);
-                  title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-                  header.addView(
-                          title,
-                          new LinearLayout.LayoutParams(
-                                  0,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT,
-                                  1
-                          )
-                  );
-
-                  Button minimize = new Button(this);
-                  minimize.setText("MINIMIZE");
-
-                  minimize.setOnClickListener(
-                          v -> moveTaskToBack(true)
-                  );
-
-                  header.addView(minimize);
-                  root.addView(header);
-
-                  searchBox = new EditText(this);
-                  searchBox.setHint("Search quests...");
-                  searchBox.setHintTextColor(Color.GRAY);
-                  searchBox.setTextColor(Color.WHITE);
-                  searchBox.setSingleLine(true);
-
-                  root.addView(
-                          searchBox,
-                          new LinearLayout.LayoutParams(
-                                  ViewGroup.LayoutParams.MATCH_PARENT,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT
-                          )
-                  );
-
-                  LinearLayout filters = new LinearLayout(this);
-                  filters.setOrientation(LinearLayout.HORIZONTAL);
-
-                  Button allButton = new Button(this);
-                  allButton.setText("ALL");
-
-                  Button f2pButton = new Button(this);
-                  f2pButton.setText("F2P");
-
-                  Button membersButton = new Button(this);
-                  membersButton.setText("MEMBERS");
-
-                  filters.addView(
-                          allButton,
-                          new LinearLayout.LayoutParams(
-                                  0,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT,
-                                  1
-                          )
-                  );
-
-                  filters.addView(
-                          f2pButton,
-                          new LinearLayout.LayoutParams(
-                                  0,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT,
-                                  1
-                          )
-                  );
-
-                  filters.addView(
-                          membersButton,
-                          new LinearLayout.LayoutParams(
-                                  0,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT,
-                                  1
-                          )
-                  );
-
-                  root.addView(filters);
-
-                  ScrollView scroll = new ScrollView(this);
-
-                  questList = new LinearLayout(this);
-                  questList.setOrientation(LinearLayout.VERTICAL);
-                  questList.setPadding(16, 16, 16, 30);
-
-                  scroll.addView(questList);
-
-                  root.addView(
-                          scroll,
-                          new LinearLayout.LayoutParams(
-                                  ViewGroup.LayoutParams.MATCH_PARENT,
-                                  0,
-                                  1
-                          )
-                  );
-
-                  setContentView(root);
-
-                  displayQuests("");
-
-                  searchBox.addTextChangedListener(
-                          new android.text.TextWatcher() {
-
-                              @Override
-                              public void beforeTextChanged(
-                                      CharSequence s,
-                                      int start,
-                                      int count,
-                                      int after) {
-                              }
-
-                              @Override
-                              public void onTextChanged(
-                                      CharSequence s,
-                                      int start,
-                                      int before,
-                                      int count) {
-                                  displayQuests(s.toString());
-                              }
-
-                              @Override
-                              public void afterTextChanged(
-                                      android.text.Editable s) {
-                              }
+                          1,
+                          "Father Aereck in Lumbridge",
+                          new String[]{
+                                  "None"
+                          },
+                          new String[]{
+                                  "None"
+                          },
+                          new String[]{
+                                  "Speak to Father Aereck.",
+                                  "Visit the ghost's location.",
+                                  "Speak with the ghost.",
+                                  "Investigate the problem.",
+                                  "Recover what the ghost needs.",
+                                  "Return and finish the quest."
                           }
-                  );
+                  ));
 
-                  allButton.setOnClickListener(
-                          v -> displayQuests("")
-                  );
+                  quests.add(new Quest(
+                          "Romeo & Juliet",
+                          false,
+                          "Novice",
+                          "Medium",
+                          5,
+                          "Romeo in Varrock",
+                          new String[]{
+                                  "None"
+                          },
+                          new String[]{
+                                  "Cadava berries"
+                          },
+                          new String[]{
+                                  "Speak with Romeo.",
+                                  "Speak with Juliet.",
+                                  "Learn about their problem.",
+                                  "Collect the required item.",
+                                  "Deliver it to the correct character.",
+                                  "Return to Romeo and complete the quest."
+                          }
+                  ));
 
-                  f2pButton.setOnClickListener(
-                          v -> displayFilter("F2P")
-                  );
-
-                  membersButton.setOnClickListener(
-                          v -> displayFilter("Members")
-                  );
-              }
-
-              private void displayFilter(String filter) {
-
-                  questList.removeAllViews();
-
-                  for (Quest quest : quests) {
-
-                      if (filter.equals("F2P")
-                              && !quest.type.equals("F2P")) {
-                          continue;
-                      }
-
-                      if (filter.equals("Members")
-                              && !quest.type.equals("Members")) {
-                          continue;
-                      }
-
-                      addQuestCard(quest);
-                  }
-              }
-
-              private void displayQuests(String search) {
-
-                  questList.removeAllViews();
-
-                  String text = search.toLowerCase().trim();
-
-                  for (Quest quest : quests) {
-
-                      if (text.isEmpty()
-                              || quest.name.toLowerCase().contains(text)) {
-                          addQuestCard(quest);
-                      }
-                  }
-              }
-
-              private void addQuestCard(Quest quest) {
-
-                  LinearLayout card = new LinearLayout(this);
-                  card.setOrientation(LinearLayout.VERTICAL);
-                  card.setPadding(20, 18, 20, 18);
-                  card.setBackgroundColor(Color.rgb(35, 35, 35));
-
-                  LinearLayout.LayoutParams params =
-                          new LinearLayout.LayoutParams(
-                                  ViewGroup.LayoutParams.MATCH_PARENT,
-                                  ViewGroup.LayoutParams.WRAP_CONTENT
-                          );
-
-                  params.setMargins(0, 0, 0, 16);
-                  card.setLayoutParams(params);
-
-                  TextView name = new TextView(this);
-                  name.setText(quest.name);
-                  name.setTextColor(Color.WHITE);
-                  name.setTextSize(21);
-                  name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-                  card.addView(name);
-
-                  TextView details = new TextView(this);
-
-                  details.setText(
-                          quest.type
-                                  + " • "
-                                  + quest.difficulty
-                                  + " • "
-                                  + quest.length
-                                  + "\nStart: "
-                                  + quest.start
-                                  + "\nRequirements: "
-                                  + quest.requirements
-                  );
-
-                  details.setTextColor(Color.LTGRAY);
-                  details.setTextSize(15);
-
-                  card.addView(details);
-
-                  Button open = new Button(this);
-                  open.setText("OPEN QUEST");
-
-                  open.setOnClickListener(
-                          v -> showQuestGuide(quest)
-                  );
-
-                  card.addView(open);
-
-                  questList.addView(card);
-              }
-
-              private void showQuestGuide(Quest quest) {
-
-                  questList.removeAllViews();
-
-                  TextView heading = new TextView(this);
-                  heading.setText(quest.name);
-                  heading.setTextColor(Color.WHITE);
-                  heading.setTextSize(25);
-                  heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-
-                  questList.addView(heading);
-
-                  TextView guide = new TextView(this);
-
-                  guide.setText(
-                          "QUEST GUIDE\n\n"
-                                  + "Start: "
-                                  + quest.start
-                                  + "\n\n"
-                                  + "Difficulty: "
-                                  + quest.difficulty
-                                  + "\n"
-                                  + "Length: "
-                                  + quest.length
-                                  + "\n"
-                                  + "Requirements: "
-                                  + quest.requirements
-                                  + "\n\n"
-                                  + "STEP 1\n"
-                                  + "Travel to the quest starting location.\n\n"
-                                  + "STEP 2\n"
-                                  + "Speak to the required NPC and begin the quest.\n\n"
-                                  + "STEP 3\n"
-                                  + "Follow the quest objectives.\n\n"
-                                  + "STEP 4\n"
-                                  + "Complete the final objective and claim your reward."
-                  );
-
-                  guide.setTextColor(Color.WHITE);
-                  guide.setTextSize(17);
-
-                  questList.addView(guide);
-
-                  Button back = new Button(this);
-                  back.setText("BACK TO QUESTS");
-
-                  back.setOnClickListener(
-                          v -> displayQuests("")
-                  );
-
-                  questList.addView(back);
-              }
-
-              private static class Quest {
-
-                  String name;
-                  String type;
-                  String difficulty;
-                  String length;
-                  String start;
-                  String requirements;
-
-                  Quest(
-                          String name,
-                          String type,
-                          String difficulty,
-                          String length,
-                          String start,
-                          String requirements) {
-
-                      this.name = name;
-                      this.type = type;
-                      this.difficulty = difficulty;
-                      this.length = length;
-                      this.start = start;
-                      this.requirements = requirements;
-                  }
-              }
-          }
-          EOF
-
-      # =====================================================
-      # GRADLE
-      # =====================================================
-
-      - name: Install Gradle 8.9
-        run: |
-          cd questmate-build
-
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-
-          unzip -q gradle-8.9-bin.zip
-
-          mv gradle-8.9 gradle
-
-          ./gradle/bin/gradle --version
-
-      # =====================================================
-      # BUILD
-      # =====================================================
-
-      - name: Build APK
-        run: |
-          cd questmate-build
-
-          ./gradle/bin/gradle clean assembleDebug \
-            --stacktrace \
-            --no-daemon
-
-      # =====================================================
-      # PREPARE APK
-      # =====================================================
-
-      - name: Prepare APK
-        run: |
-
-          set -e
-
-          echo "Searching for APK..."
-
-          find "$GITHUB_WORKSPACE/questmate-build" \
-            -type f \
-            -name "*.apk" \
-            -print
-
-          APK=$(find "$GITHUB_WORKSPACE/questmate-build" \
-            -type f \
-            -name "*.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found."
-            exit 1
-          fi
-
-          mkdir -p "$GITHUB_WORKSPACE/artifact"
-
-          cp "$APK" \
-             "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
-
-          echo ""
-          echo "APK READY:"
-          ls -lh "$GITHUB_WORKSPACE/artifact/QuestMate.apk"
-
-      # =====================================================
-      # VERIFY
-     
+                  quests.add(new Quest(
+                          "Vampire Slayer",
+                          false,
+                          "Novice",
+                          "Medium",
+                          3,
+                          "Morgan in Draynor Village",
+                          new String[]{
+                                  "
