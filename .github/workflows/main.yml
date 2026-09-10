@@ -1,0 +1,1098 @@
+name: Build QuestMate 4 - OSRS Quest Overlay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Create project folders
+        run: |
+          rm -rf questmate-build
+          mkdir -p questmate-build/app/src/main/java/com/questmate/app
+          mkdir -p questmate-build/app/src/main/res/values
+          mkdir -p questmate-build/app/src/main/assets
+
+      - name: Create Gradle files
+        run: |
+          cat > questmate-build/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "QuestMate"
+          include(":app")
+          EOF
+
+          cat > questmate-build/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > questmate-build/gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
+
+          cat > questmate-build/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.questmate.app'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.questmate.app'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 4
+                  versionName '4.0'
+              }
+          }
+          EOF
+
+      - name: Create Android resources
+        run: |
+          cat > questmate-build/app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+              <color name="questmate_bg">#10141C</color>
+              <color name="questmate_card">#1B2330</color>
+              <color name="questmate_accent">#49D17D</color>
+              <color name="questmate_text">#FFFFFF</color>
+          </resources>
+          EOF
+
+          cat > questmate-build/app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">QuestMate</string>
+              <string name="overlay_channel">QuestMate Overlay</string>
+          </resources>
+          EOF
+
+          cat > questmate-build/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">@color/questmate_accent</item>
+                  <item name="android:navigationBarColor">@color/questmate_bg</item>
+                  <item name="android:statusBarColor">@color/questmate_bg</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+      - name: Create Android Manifest
+        run: |
+          cat > questmate-build/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="@string/app_name"
+                  android:theme="@style/AppTheme"
+                  android:supportsRtl="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".OverlayService"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="Floating QuestMate quest walkthrough overlay shown at the user's request while using another app." />
+
+                  </service>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      - name: Create Quest Database
+        run: |
+          cat > questmate-build/app/src/main/assets/quests.json <<'EOF'
+          [
+            {
+              "name":"Cook's Assistant",
+              "members":false,
+              "difficulty":"Novice",
+              "length":"Short",
+              "questPoints":1,
+              "steps":[
+                "Start the quest and speak with the cook in Lumbridge Castle.",
+                "Collect the ingredients requested by the cook.",
+                "Return the ingredients to the cook.",
+                "Finish the conversation and receive the reward."
+              ]
+            },
+            {
+              "name":"The Restless Ghost",
+              "members":false,
+              "difficulty":"Novice",
+              "length":"Short",
+              "questPoints":1,
+              "steps":[
+                "Start the quest by speaking with Father Aereck in Lumbridge.",
+                "Find the ghost and investigate what is troubling it.",
+                "Obtain what you need to communicate with the ghost.",
+                "Return to the ghost and resolve its problem.",
+                "Return to Father Aereck and claim your reward."
+              ]
+            },
+            {
+              "name":"Romeo & Juliet",
+              "members":false,
+              "difficulty":"Novice",
+              "length":"Short",
+              "questPoints":5,
+              "steps":[
+                "Speak with Romeo in Varrock to begin the quest.",
+                "Find Juliet and learn what is preventing the couple from being together.",
+                "Carry out the requested tasks involving Romeo and Juliet.",
+                "Follow the plan to arrange their escape.",
+                "Return to Romeo and finish the final conversation."
+              ]
+            }
+          ]
+          EOF
+
+      - name: Create MainActivity
+        run: |
+          cat > questmate-build/app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
+          package com.questmate.app;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.view.View;
+          import android.widget.*;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          import java.io.InputStream;
+          import java.nio.charset.StandardCharsets;
+          import java.util.ArrayList;
+          import java.util.List;
+
+          public class MainActivity extends Activity {
+
+              LinearLayout root;
+              List<Quest> quests = new ArrayList<>();
+              Quest selected;
+
+              static class Quest {
+                  String name;
+                  String difficulty;
+                  String length;
+                  boolean members;
+                  int questPoints;
+                  ArrayList<String> steps = new ArrayList<>();
+              }
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  loadQuests();
+                  showHome();
+              }
+
+              TextView makeText(String value, int size) {
+                  TextView t = new TextView(this);
+                  t.setText(value);
+                  t.setTextSize(size);
+                  t.setTextColor(Color.WHITE);
+                  t.setPadding(24, 18, 24, 18);
+                  return t;
+              }
+
+              Button makeButton(String value) {
+                  Button b = new Button(this);
+                  b.setText(value);
+                  b.setTextColor(Color.WHITE);
+                  b.setAllCaps(false);
+                  return b;
+              }
+
+              void createBase() {
+                  ScrollView scroll = new ScrollView(this);
+
+                  root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(18, 18, 18, 18);
+                  root.setBackgroundColor(Color.rgb(16, 20, 28));
+
+                  scroll.addView(root);
+                  setContentView(scroll);
+              }
+
+              void showHome() {
+                  createBase();
+
+                  TextView title = makeText("QUESTMATE", 30);
+                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  root.addView(title);
+
+                  root.addView(makeText("OSRS Quest Companion", 17));
+
+                  Button overlay = makeButton("START OVERLAY");
+                  overlay.setOnClickListener(v -> startOverlay());
+                  root.addView(overlay);
+
+                  EditText search = new EditText(this);
+                  search.setHint("Search quests");
+                  search.setTextColor(Color.WHITE);
+                  search.setHintTextColor(Color.LTGRAY);
+                  root.addView(search);
+
+                  LinearLayout list = new LinearLayout(this);
+                  list.setOrientation(LinearLayout.VERTICAL);
+                  root.addView(list);
+
+                  Runnable refresh = () -> {
+                      list.removeAllViews();
+
+                      String query =
+                              search.getText().toString().toLowerCase();
+
+                      for (Quest q : quests) {
+                          if (!q.name.toLowerCase().contains(query)) {
+                              continue;
+                          }
+
+                          Button item = makeButton(
+                                  q.name +
+                                  (q.members ? " • Members" : " • F2P")
+                          );
+
+                          item.setOnClickListener(v -> showQuest(q));
+                          list.addView(item);
+                      }
+                  };
+
+                  search.addTextChangedListener(
+                          new android.text.TextWatcher() {
+                              public void beforeTextChanged(
+                                      CharSequence s,
+                                      int start,
+                                      int count,
+                                      int after) {
+                              }
+
+                              public void onTextChanged(
+                                      CharSequence s,
+                                      int start,
+                                      int before,
+                                      int count) {
+                                  refresh.run();
+                              }
+
+                              public void afterTextChanged(
+                                      android.text.Editable e) {
+                              }
+                          }
+                  );
+
+                  refresh.run();
+              }
+
+              void showQuest(Quest q) {
+                  selected = q;
+
+                  createBase();
+
+                  Button back = makeButton("← QUESTS");
+                  back.setOnClickListener(v -> showHome());
+                  root.addView(back);
+
+                  TextView title = makeText(q.name, 28);
+                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  root.addView(title);
+
+                  root.addView(makeText(
+                          (q.members ? "Members" : "Free-to-play") +
+                          " • " +
+                          q.difficulty +
+                          " • " +
+                          q.length +
+                          " • " +
+                          q.questPoints +
+                          " Quest Points",
+                          16
+                  ));
+
+                  root.addView(makeText("FULL WALKTHROUGH", 22));
+
+                  for (int i = 0; i < q.steps.size(); i++) {
+
+                      CheckBox cb = new CheckBox(this);
+
+                      cb.setText(
+                              (i + 1) +
+                              ". " +
+                              q.steps.get(i)
+                      );
+
+                      cb.setTextColor(Color.WHITE);
+                      cb.setTextSize(16);
+
+                      String key =
+                              "quest_" +
+                              q.name.replaceAll(
+                                      "[^A-Za-z0-9]",
+                                      "_"
+                              ) +
+                              "_step_" +
+                              i;
+
+                      cb.setChecked(
+                              getPreferences(0)
+                                      .getBoolean(key, false)
+                      );
+
+                      cb.setOnCheckedChangeListener(
+                              (button, checked) ->
+                                      getPreferences(0)
+                                              .edit()
+                                              .putBoolean(
+                                                      key,
+                                                      checked
+                                              )
+                                              .apply()
+                      );
+
+                      root.addView(cb);
+                  }
+
+                  Button complete =
+                          makeButton("MARK QUEST COMPLETE");
+
+                  complete.setOnClickListener(v ->
+                          Toast.makeText(
+                                  this,
+                                  "Quest completed!",
+                                  Toast.LENGTH_SHORT
+                          ).show()
+                  );
+
+                  root.addView(complete);
+
+                  Button startOverlay =
+                          makeButton(
+                                  "START OVERLAY WITH THIS QUEST"
+                          );
+
+                  startOverlay.setOnClickListener(
+                          v -> startOverlay()
+                  );
+
+                  root.addView(startOverlay);
+              }
+
+              void startOverlay() {
+
+                  if (!Settings.canDrawOverlays(this)) {
+
+                      Intent settings =
+                              new Intent(
+                                      Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                      Uri.parse(
+                                              "package:" +
+                                              getPackageName()
+                                      )
+                              );
+
+                      startActivity(settings);
+
+                      Toast.makeText(
+                              this,
+                              "Allow QuestMate to display over other apps, then return to QuestMate and press START OVERLAY again.",
+                              Toast.LENGTH_LONG
+                      ).show();
+
+                      return;
+                  }
+
+                  Intent service =
+                          new Intent(
+                                  this,
+                                  OverlayService.class
+                          );
+
+                  service.putExtra(
+                          "quest",
+                          selected == null
+                                  ? "QuestMate"
+                                  : selected.name
+                  );
+
+                  service.putExtra(
+                          "step",
+                          selected == null
+                                  ? "Choose a quest to begin."
+                                  : selected.steps.get(0)
+                  );
+
+                  if (android.os.Build.VERSION.SDK_INT >= 26) {
+                      startForegroundService(service);
+                  } else {
+                      startService(service);
+                  }
+
+                  Toast.makeText(
+                          this,
+                          "QuestMate overlay started.",
+                          Toast.LENGTH_SHORT
+                  ).show();
+              }
+
+              void loadQuests() {
+
+                  try {
+
+                      InputStream input =
+                              getAssets().open("quests.json");
+
+                      byte[] data =
+                              new byte[input.available()];
+
+                      input.read(data);
+                      input.close();
+
+                      JSONArray array =
+                              new JSONArray(
+                                      new String(
+                                              data,
+                                              StandardCharsets.UTF_8
+                                      )
+                              );
+
+                      for (int i = 0;
+                           i < array.length();
+                           i++) {
+
+                          JSONObject object =
+                                  array.getJSONObject(i);
+
+                          Quest q = new Quest();
+
+                          q.name =
+                                  object.optString("name");
+
+                          q.members =
+                                  object.optBoolean("members");
+
+                          q.difficulty =
+                                  object.optString("difficulty");
+
+                          q.length =
+                                  object.optString("length");
+
+                          q.questPoints =
+                                  object.optInt("questPoints");
+
+                          JSONArray steps =
+                                  object.optJSONArray("steps");
+
+                          if (steps != null) {
+                              for (int j = 0;
+                                   j < steps.length();
+                                   j++) {
+
+                                  q.steps.add(
+                                          steps.getString(j)
+                                  );
+                              }
+                          }
+
+                          quests.add(q);
+                      }
+
+                  } catch (Exception e) {
+
+                      Toast.makeText(
+                              this,
+                              "Could not load quest database.",
+                              Toast.LENGTH_LONG
+                      ).show();
+                  }
+              }
+          }
+          EOF
+
+      - name: Create OverlayService
+        run: |
+          cat > questmate-build/app/src/main/java/com/questmate/app/OverlayService.java <<'EOF'
+          package com.questmate.app;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.Service;
+          import android.app.ServiceInfo;
+          import android.content.Intent;
+          import android.graphics.Color;
+          import android.graphics.PixelFormat;
+          import android.os.Build;
+          import android.os.IBinder;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.view.MotionEvent;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public class OverlayService extends Service {
+
+              WindowManager windowManager;
+              LinearLayout panel;
+              TextView title;
+              TextView step;
+
+              int positionX = 30;
+              int positionY = 180;
+
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+
+                  createNotificationChannel();
+
+                  Notification notification =
+                          new Notification.Builder(
+                                  this,
+                                  "questmate_overlay"
+                          )
+                          .setContentTitle(
+                                  "QuestMate overlay"
+                          )
+                          .setContentText(
+                                  "QuestMate is running"
+                          )
+                          .setSmallIcon(
+                                  android.R.drawable.ic_dialog_info
+                          )
+                          .setOngoing(true)
+                          .build();
+
+                  if (Build.VERSION.SDK_INT >= 29) {
+
+                      startForeground(
+                              1001,
+                              notification,
+                              ServiceInfo
+                                      .FOREGROUND_SERVICE_TYPE_MANIFEST
+                      );
+
+                  } else {
+
+                      startForeground(
+                              1001,
+                              notification
+                      );
+                  }
+
+                  showOverlay();
+              }
+
+              void createNotificationChannel() {
+
+                  if (Build.VERSION.SDK_INT >= 26) {
+
+                      NotificationChannel channel =
+                              new NotificationChannel(
+                                      "questmate_overlay",
+                                      "QuestMate Overlay",
+                                      NotificationManager
+                                              .IMPORTANCE_LOW
+                              );
+
+                      NotificationManager manager =
+                              getSystemService(
+                                      NotificationManager.class
+                              );
+
+                      manager.createNotificationChannel(
+                              channel
+                      );
+                  }
+              }
+
+              WindowManager.LayoutParams makeParams() {
+
+                  int type;
+
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      type =
+                              WindowManager.LayoutParams
+                                      .TYPE_APPLICATION_OVERLAY;
+                  } else {
+                      type =
+                              WindowManager.LayoutParams
+                                      .TYPE_PHONE;
+                  }
+
+                  return new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.WRAP_CONTENT,
+                          WindowManager.LayoutParams.WRAP_CONTENT,
+                          type,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                          PixelFormat.TRANSLUCENT
+                  );
+              }
+
+              TextView makeText(String value, int size) {
+
+                  TextView t =
+                          new TextView(this);
+
+                  t.setText(value);
+                  t.setTextColor(Color.WHITE);
+                  t.setTextSize(size);
+                  t.setPadding(
+                          20,
+                          12,
+                          20,
+                          12
+                  );
+
+                  return t;
+              }
+
+              Button makeButton(String value) {
+
+                  Button b =
+                          new Button(this);
+
+                  b.setText(value);
+                  b.setAllCaps(false);
+
+                  return b;
+              }
+
+              void showOverlay() {
+
+                  if (!Settings.canDrawOverlays(this)) {
+                      stopSelf();
+                      return;
+                  }
+
+                  windowManager =
+                          (WindowManager)
+                                  getSystemService(
+                                          WINDOW_SERVICE
+                                  );
+
+                  panel =
+                          new LinearLayout(this);
+
+                  panel.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
+                  panel.setPadding(
+                          10,
+                          10,
+                          10,
+                          10
+                  );
+
+                  panel.setBackgroundColor(
+                          Color.rgb(
+                                  27,
+                                  35,
+                                  48
+                          )
+                  );
+
+                  title =
+                          makeText(
+                                  "QUESTMATE",
+                                  22
+                          );
+
+                  step =
+                          makeText(
+                                  "QuestMate overlay active",
+                                  17
+                          );
+
+                  Button next =
+                          makeButton(
+                                  "NEXT STEP"
+                          );
+
+                  next.setOnClickListener(
+                          v ->
+                                  step.setText(
+                                          "Next step — continue your quest walkthrough."
+                                  )
+                  );
+
+                  Button minimise =
+                          makeButton(
+                                  "MINIMISE"
+                          );
+
+                  minimise.setOnClickListener(
+                          v -> minimise()
+                  );
+
+                  Button close =
+                          makeButton(
+                                  "CLOSE OVERLAY"
+                          );
+
+                  close.setOnClickListener(
+                          v -> stopSelf()
+                  );
+
+                  panel.addView(title);
+                  panel.addView(step);
+                  panel.addView(next);
+                  panel.addView(minimise);
+                  panel.addView(close);
+
+                  WindowManager.LayoutParams params =
+                          makeParams();
+
+                  params.x = positionX;
+                  params.y = positionY;
+
+                  panel.setOnTouchListener(
+                          new View.OnTouchListener() {
+
+                              int downX;
+                              int downY;
+                              int oldX;
+                              int oldY;
+
+                              @Override
+                              public boolean onTouch(
+                                      View v,
+                                      MotionEvent event) {
+
+                                  if (event.getAction() ==
+                                          MotionEvent.ACTION_DOWN) {
+
+                                      downX =
+                                              (int)
+                                                      event.getRawX();
+
+                                      downY =
+                                              (int)
+                                                      event.getRawY();
+
+                                      oldX =
+                                              params.x;
+
+                                      oldY =
+                                              params.y;
+
+                                      return true;
+                                  }
+
+                                  if (event.getAction() ==
+                                          MotionEvent.ACTION_MOVE) {
+
+                                      params.x =
+                                              oldX +
+                                              (int)
+                                                      event.getRawX()
+                                              - downX;
+
+                                      params.y =
+                                              oldY +
+                                              (int)
+                                                      event.getRawY()
+                                              - downY;
+
+                                      windowManager
+                                              .updateViewLayout(
+                                                      panel,
+                                                      params
+                                              );
+
+                                      return true;
+                                  }
+
+                                  return false;
+                              }
+                          }
+                  );
+
+                  windowManager.addView(
+                          panel,
+                          params
+                  );
+              }
+
+              void minimise() {
+
+                  if (panel == null) {
+                      return;
+                  }
+
+                  panel.removeAllViews();
+
+                  TextView q =
+                          makeText(
+                                  "Q",
+                                  26
+                          );
+
+                  q.setGravity(
+                          Gravity.CENTER
+                  );
+
+                  q.setTextColor(
+                          Color.BLACK
+                  );
+
+                  q.setBackgroundColor(
+                          Color.rgb(
+                                  73,
+                                  209,
+                                  125
+                          )
+                  );
+
+                  q.setOnClickListener(
+                          v -> maximise()
+                  );
+
+                  panel.addView(q);
+
+                  WindowManager.LayoutParams params =
+                          (WindowManager.LayoutParams)
+                                  panel.getLayoutParams();
+
+                  params.width = 150;
+                  params.height = 150;
+
+                  windowManager.updateViewLayout(
+                          panel,
+                          params
+                  );
+              }
+
+              void maximise() {
+
+                  if (panel == null) {
+                      return;
+                  }
+
+                  panel.removeAllViews();
+
+                  title =
+                          makeText(
+                                  "QUESTMATE",
+                                  22
+                          );
+
+                  step =
+                          makeText(
+                                  "QuestMate overlay active",
+                                  17
+                          );
+
+                  Button next =
+                          makeButton(
+                                  "NEXT STEP"
+                          );
+
+                  next.setOnClickListener(
+                          v ->
+                                  step.setText(
+                                          "Next step — continue your quest walkthrough."
+                                  )
+                  );
+
+                  Button minimise =
+                          makeButton(
+                                  "MINIMISE"
+                          );
+
+                  minimise.setOnClickListener(
+                          v -> minimise()
+                  );
+
+                  Button close =
+                          makeButton(
+                                  "CLOSE OVERLAY"
+                          );
+
+                  close.setOnClickListener(
+                          v -> stopSelf()
+                  );
+
+                  panel.addView(title);
+                  panel.addView(step);
+                  panel.addView(next);
+                  panel.addView(minimise);
+                  panel.addView(close);
+
+                  WindowManager.LayoutParams params =
+                          (WindowManager.LayoutParams)
+                                  panel.getLayoutParams();
+
+                  params.width =
+                          WindowManager.LayoutParams.WRAP_CONTENT;
+
+                  params.height =
+                          WindowManager.LayoutParams.WRAP_CONTENT;
+
+                  windowManager.updateViewLayout(
+                          panel,
+                          params
+                  );
+              }
+
+              @Override
+              public int onStartCommand(
+                      Intent intent,
+                      int flags,
+                      int startId) {
+
+                  if (intent != null &&
+                          title != null &&
+                          step != null) {
+
+                      String quest =
+                              intent.getStringExtra(
+                                      "quest"
+                              );
+
+                      String currentStep =
+                              intent.getStringExtra(
+                                      "step"
+                              );
+
+                      title.setText(
+                              quest == null
+                                      ? "QUESTMATE"
+                                      : "QUESTMATE • " +
+                                        quest
+                      );
+
+                      step.setText(
+                              currentStep == null
+                                      ? "QuestMate overlay active"
+                                      : currentStep
+                      );
+                  }
+
+                  return START_NOT_STICKY;
+              }
+
+              @Override
+              public void onDestroy() {
+
+                  try {
+
+                      if (panel != null &&
+                              windowManager != null) {
+
+                          windowManager.removeView(
+                                  panel
+                          );
+                      }
+
+                  } catch (Exception ignored) {
+                  }
+
+                  super.onDestroy();
+              }
+
+              @Override
+              public IBinder onBind(
+                      Intent intent) {
+
+                  return null;
+              }
+          }
+          EOF
+
+      - name: Download Gradle 8.9
+        run: |
+          cd questmate-build
+          curl -L -o gradle.zip \
+            https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle.zip
+          mv gradle-8.9 gradle
+          rm gradle.zip
+          chmod +x gradle/bin/gradle
+
+      - name: Build APK
+        run: |
+          cd questmate-build
+          ./gradle clean assembleDebug --stacktrace
+
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+          cp questmate-build/app/build/outputs/apk/debug/app-debug.apk \
+            dist/QuestMate.apk
+          ls -lh dist/QuestMate.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-APK
+          path: dist/QuestMate.apk
+          if-no-files-found: error
