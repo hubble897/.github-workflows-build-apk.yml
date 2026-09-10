@@ -693,3 +693,33 @@ jobs:
                   skill = match.group(1).replace(
                       "_",
                   
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+          APK=$(find . -type f -name "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK was produced"
+            exit 1
+          fi
+          echo "Found APK: $APK"
+          cp "$APK" dist/QuestMate.apk
+          ls -lh dist/QuestMate.apk
+
+      - name: Upload QuestMate APK
+        id: upload
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: QuestMate-APK
+          path: dist/QuestMate.apk
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+
+      - name: Confirm Artifact
+        run: |
+          echo "================================"
+          echo "QUESTMATE APK ARTIFACT CREATED"
+          echo "================================"
+          echo "Artifact ID: ${{ steps.upload.outputs.artifact-id }}"
+          echo "Artifact URL: ${{ steps.upload.outputs.artifact-url }}"
+          echo "SHA256: ${{ steps.upload.outputs.artifact-digest }}"
